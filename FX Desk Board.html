@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FX DESK. Market Board</title>
+<link rel="stylesheet" href="/static/styles.css">
+<style>
+  .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
+  .fx-pair{font-size:12.5px;font-weight:500;white-space:nowrap}
+  .fx-px{font-size:12.5px;text-align:right}
+  .fx-pct{font-size:12px;text-align:right;min-width:58px}
+  .mv-row{grid-template-columns:18px 1fr auto auto;gap:8px;cursor:default}
+  .mv-rank{font-size:11px;color:#98989b;text-align:right}
+  .mv-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mv-px{font-size:12px;text-align:right;color:#5d5d60}
+  .mv-pct{font-size:12px;text-align:right;min-width:56px}
+  .mt-row{display:grid;grid-template-columns:18px 1fr auto auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .mt-vol{font-size:12px;text-align:right;min-width:64px;color:#1d1f20;font-weight:500}
+  .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+  .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 8px;border:1px solid var(--color-accent);color:var(--color-accent);background:rgba(89,128,166,.08);letter-spacing:.02em}
+  .kw-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0}
+  .kw-chip button:hover{color:#c0392b}
+  .up{color:var(--color-accent)}
+  .dn{color:#c0392b}
+</style>
+</head>
+<body>
+
+<div style="max-width:1180px;margin:0 auto;background:#f2f2f3;border-left:1px solid var(--color-divider);border-right:1px solid var(--color-divider);min-height:100vh">
+
+  <!-- header -->
+  <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:16px 26px;position:sticky;top:0;z-index:10;background:#f2f2f3">
+    <span class="nav-brand" style="font-size:20px">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:12px;font-weight:400;color:#7a7a7d;letter-spacing:.14em;text-transform:uppercase">Market Board</span></span>
+    <span id="conn-badge" class="conn-badge"><span id="conn-dot" class="conn-dot connecting"></span><span id="conn-text">연결 중…</span></span>
+    <span class="mono" id="clock" style="font-size:13px;font-weight:500"></span>
+    <span class="mono" id="today" style="font-size:12px;color:#7a7a7d"></span>
+  </div>
+
+  <!-- ticker strip -->
+  <div id="ticker-strip" style="display:flex;gap:0;border-bottom:1px solid var(--color-divider);background:#e9e9ea;overflow-x:auto"></div>
+
+  <div style="padding:22px 26px 32px;display:flex;flex-direction:column;gap:22px">
+
+    <!-- FX — compact, by region -->
+    <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+        <h4 style="margin:0">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
+        <span style="font-size:11px" class="text-muted">지역별 · 실시간 (Yahoo Finance)</span>
+      </div>
+      <div id="fx-regions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 26px">
+        <div id="fx-col-0"></div>
+        <div id="fx-col-1"></div>
+        <div id="fx-col-2"></div>
+      </div>
+    </div>
+
+    <!-- body: full-width paired rows -->
+    <div style="display:flex;flex-direction:column;gap:22px">
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
+          <div id="idx-main" style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px">
+            <div id="idx-col-0"></div>
+            <div id="idx-col-1"></div>
+          </div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">금리 <span class="kop" style="font-size:11px">Rates · US Treasury Yield Curve</span></h4>
+          <div id="rates-list"></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:#98989b;font-weight:400">(* 코스닥)</span></h4>
+            <div class="seg" style="height:28px">
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span>상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-losers"><span>하락</span></label>
+            </div>
+          </div>
+          <div id="movers-list">
+              <div class="mv-row"><span class="mv-rank">1</span><span class="mv-name">삼성전자</span><span class="mono mv-px">74,300</span><span class="mono mv-pct up">+4.21%</span></div>
+              <div class="mv-row"><span class="mv-rank">2</span><span class="mv-name">에코프로*</span><span class="mono mv-px">98,600</span><span class="mono mv-pct up">+3.88%</span></div>
+              <div class="mv-row"><span class="mv-rank">3</span><span class="mv-name">SK하이닉스</span><span class="mono mv-px">201,500</span><span class="mono mv-pct up">+3.42%</span></div>
+              <div class="mv-row"><span class="mv-rank">4</span><span class="mv-name">포스코퓨처엠</span><span class="mono mv-px">312,000</span><span class="mono mv-pct up">+3.10%</span></div>
+              <div class="mv-row"><span class="mv-rank">5</span><span class="mv-name">알테오젠*</span><span class="mono mv-px">184,200</span><span class="mono mv-pct up">+2.77%</span></div>
+              <div class="mv-row"><span class="mv-rank">6</span><span class="mv-name">현대차</span><span class="mono mv-px">238,500</span><span class="mono mv-pct up">+2.53%</span></div>
+              <div class="mv-row"><span class="mv-rank">7</span><span class="mv-name">LG에너지솔루션</span><span class="mono mv-px">401,000</span><span class="mono mv-pct up">+2.31%</span></div>
+              <div class="mv-row"><span class="mv-rank">8</span><span class="mv-name">엔켐*</span><span class="mono mv-px">142,800</span><span class="mono mv-pct up">+2.09%</span></div>
+              <div class="mv-row"><span class="mv-rank">9</span><span class="mv-name">기아</span><span class="mono mv-px">112,400</span><span class="mono mv-pct up">+1.94%</span></div>
+              <div class="mv-row"><span class="mv-rank">10</span><span class="mv-name">셀트리온</span><span class="mono mv-px">187,900</span><span class="mono mv-pct up">+1.72%</span></div>
+          </div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:#98989b;font-weight:400">(* 코스닥)</span></h4>
+          <div id="kr-most-traded-list"></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · S&amp;P 500 + NASDAQ</span></h4>
+            <div class="seg" style="height:28px">
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span>상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-losers"><span>하락</span></label>
+            </div>
+          </div>
+          <div id="us-movers-list"></div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순</span></h4>
+          <div id="us-most-active-list"></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
+          <div id="commodities-list"></div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3;position:relative">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">관심종목 시세 <span class="kop" style="font-size:11px">Watchlist</span></h4>
+          <div style="position:relative;margin-bottom:10px">
+            <input id="watchlist-search" class="input" type="text" placeholder="종목명 검색 후 추가 (예: 삼성전자)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
+            <div id="watchlist-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-md);z-index:20;max-height:220px;overflow-y:auto"></div>
+          </div>
+          <div id="watchlist-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px"></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
+            <span id="news-count" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <div style="position:relative;margin-bottom:8px">
+            <input id="news-kw-input" class="input" type="text" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
+          </div>
+          <div id="news-kw-chips" class="kw-wrap" style="display:none"></div>
+          <div id="news-list"></div>
+          <div id="news-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">일치하는 키워드의 뉴스가 없습니다.</div>
+          <div id="news-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
+        </div>
+
+    </div>
+
+    <div style="text-align:center;font-size:10.5px;color:#98989b;padding-top:6px;letter-spacing:.04em">
+      FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신 <span id="as-of" class="mono">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- 종목 상세 팝업 (FX Stock Popup.dc.html 기반) -->
+<div id="stock-popup-backdrop" class="dialog-backdrop" style="display:none">
+  <div class="dialog blueprint stk-dialog" role="dialog" aria-modal="true" aria-labelledby="stk-name">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+          <span id="stk-name" style="font-family:var(--font-heading);font-weight:600;font-size:24px;letter-spacing:.01em"></span>
+          <span id="stk-code" class="mono" style="font-size:12px;color:#7a7a7d"></span>
+          <span id="stk-market" class="tag tag-outline" style="font-size:10px;padding:1px 7px"></span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:11px;margin-top:8px">
+          <span id="stk-price" class="mono" style="font-size:32px;font-weight:600;line-height:1"></span>
+          <span id="stk-chg" class="mono" style="font-size:15px"></span>
+        </div>
+      </div>
+      <button type="button" id="stk-close" class="stk-close" aria-label="닫기">✕</button>
+    </div>
+
+    <div class="blueprint" style="margin-top:16px;padding:12px 12px 6px;background:#e9e9ea;position:relative">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7a7d;margin-bottom:4px;letter-spacing:.08em;text-transform:uppercase">
+        <span>당일 분봉 · Intraday</span><span id="stk-hilo"></span>
+      </div>
+      <div id="stk-chart"></div>
+    </div>
+
+    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 20px">
+      <div class="stat"><span>거래량 (주)</span><b class="mono" id="stk-volume"></b></div>
+      <div class="stat"><span>거래대금</span><b class="mono" id="stk-tradingValue"></b></div>
+      <div class="stat"><span>시가총액</span><b class="mono" id="stk-marketCap"></b></div>
+      <div class="stat"><span>시가</span><b class="mono" id="stk-open"></b></div>
+      <div class="stat"><span>고가</span><b class="mono" id="stk-high"></b></div>
+      <div class="stat"><span>저가</span><b class="mono" id="stk-low"></b></div>
+      <div class="stat"><span>52주 최고</span><b class="mono" id="stk-week52High"></b></div>
+      <div class="stat"><span>52주 최저</span><b class="mono" id="stk-week52Low"></b></div>
+      <div class="stat"><span>외국인 소진율</span><b class="mono" id="stk-foreignRate"></b></div>
+      <div class="stat"><span>PER</span><b class="mono" id="stk-per"></b></div>
+      <div class="stat"><span>PBR</span><b class="mono" id="stk-pbr"></b></div>
+      <div class="stat"><span>전일 종가</span><b class="mono" id="stk-prevClose"></b></div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">관련 뉴스 Headlines</div>
+      <div id="stk-news"></div>
+    </div>
+
+    <div class="dialog-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px">
+      <button type="button" id="stk-close-btn" class="btn btn-secondary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+      <button type="button" id="stk-watchlist-btn" class="btn btn-primary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><span id="stk-watchlist-label">☆ 관심종목 추가</span></button>
+    </div>
+  </div>
+</div>
+
+<!-- 지표 상세 팝업 (FX Market Popups.dc.html 기반: 환율/지수/원자재/금리 공용) -->
+<div id="indicator-popup-backdrop" class="dialog-backdrop" style="display:none">
+  <div class="dialog blueprint stk-dialog" role="dialog" aria-modal="true" aria-labelledby="ind-title">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+      <div>
+        <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
+          <span id="ind-title" style="font-family:var(--font-heading);font-weight:600;font-size:24px"></span>
+          <span id="ind-subtitle" style="font-size:12px;color:#7a7a7d"></span>
+          <span id="ind-tag" class="tag tag-outline" style="font-size:10px;padding:1px 7px"></span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:11px;margin-top:8px;flex-wrap:wrap">
+          <span id="ind-price" class="mono" style="font-size:32px;font-weight:600;line-height:1"></span>
+          <span id="ind-chg" class="mono" style="font-size:14px"></span>
+        </div>
+      </div>
+      <button type="button" id="ind-close" class="stk-close" aria-label="닫기">✕</button>
+    </div>
+
+    <div class="blueprint" style="margin-top:16px;padding:12px 12px 6px;background:#e9e9ea;position:relative">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7a7d;margin-bottom:4px;letter-spacing:.08em;text-transform:uppercase">
+        <span id="ind-chart-label"></span><span id="ind-chart-range"></span>
+      </div>
+      <div id="ind-chart"></div>
+    </div>
+
+    <div id="ind-stats" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px"></div>
+
+    <div id="ind-news-wrap" style="margin-top:16px">
+      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">관련 뉴스 Headlines</div>
+      <div id="ind-news"></div>
+    </div>
+
+    <div class="dialog-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px">
+      <button type="button" id="ind-close-btn" class="btn btn-secondary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
