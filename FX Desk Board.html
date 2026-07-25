@@ -24,6 +24,22 @@
   .kw-chip button:hover{color:#c0392b}
   .up{color:var(--color-accent)}
   .dn{color:#c0392b}
+
+  /* — 모바일 대응: 인라인 그리드를 좁은 화면에서 1단으로 접는다 — */
+  @media (max-width: 900px){
+    .row-pair{grid-template-columns:1fr !important}
+    #fx-regions{grid-template-columns:1fr 1fr !important}
+  }
+  @media (max-width: 640px){
+    .page-pad{padding:14px 12px 24px !important;gap:16px !important}
+    .page-pad > .blueprint,.row-pair > .blueprint{padding:14px 12px !important}
+    .nav{flex-wrap:wrap;padding:10px 14px !important;gap:6px 14px !important}
+    #fx-regions,#idx-main,#watchlist-list{grid-template-columns:1fr !important}
+    .panel-head{flex-wrap:wrap;gap:6px}
+    .stat-grid{grid-template-columns:repeat(2,1fr) !important}
+    .dialog-backdrop{padding:10px !important}
+    .stk-dialog{max-width:100% !important;max-height:96vh !important}
+  }
 </style>
 </head>
 <body>
@@ -41,7 +57,7 @@
   <!-- ticker strip -->
   <div id="ticker-strip" style="display:flex;gap:0;border-bottom:1px solid var(--color-divider);background:#e9e9ea;overflow-x:auto"></div>
 
-  <div style="padding:22px 26px 32px;display:flex;flex-direction:column;gap:22px">
+  <div class="page-pad" style="padding:22px 26px 32px;display:flex;flex-direction:column;gap:22px">
 
     <!-- FX — compact, by region -->
     <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
@@ -60,7 +76,7 @@
     <!-- body: full-width paired rows -->
     <div style="display:flex;flex-direction:column;gap:22px">
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <h4 style="margin:0 0 10px">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
@@ -76,10 +92,10 @@
         </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:#98989b;font-weight:400">(* 코스닥)</span></h4>
             <div class="seg" style="height:28px">
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span>상승</span></label>
@@ -106,10 +122,10 @@
         </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · S&amp;P 500 + NASDAQ</span></h4>
             <div class="seg" style="height:28px">
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span>상승</span></label>
@@ -125,7 +141,7 @@
         </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
@@ -205,7 +221,7 @@
       <div id="stk-chart"></div>
     </div>
 
-    <div style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 20px">
+    <div class="stat-grid" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 20px">
       <div class="stat"><span>거래량 (주)</span><b class="mono" id="stk-volume"></b></div>
       <div class="stat"><span>거래대금</span><b class="mono" id="stk-tradingValue"></b></div>
       <div class="stat"><span>시가총액</span><b class="mono" id="stk-marketCap"></b></div>
@@ -260,7 +276,7 @@
       <div id="ind-chart"></div>
     </div>
 
-    <div id="ind-stats" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px"></div>
+    <div id="ind-stats" class="stat-grid" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px"></div>
 
     <div id="ind-news-wrap" style="margin-top:16px">
       <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">관련 뉴스 Headlines</div>
