@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=2">
+<link rel="stylesheet" href="/static/styles.css?v=3">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -37,6 +37,9 @@
     #fx-regions,#idx-main{grid-template-columns:1fr !important}
     .panel-head{flex-wrap:wrap;gap:6px}
     #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
+    /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을
+       자동 확대해서, 검색 후 열리는 팝업이 줌인된 채로 보인다. */
+    #global-search,#news-kw-input{font-size:16px !important}
   }
 </style>
 </head>
@@ -336,6 +339,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=2"></script>
+<script src="/static/app.js?v=3"></script>
 </body>
 </html>

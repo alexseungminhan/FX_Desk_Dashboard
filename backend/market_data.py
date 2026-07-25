@@ -68,16 +68,18 @@ IDX_MAIN = [
     {"symbol": "^STOXX50E", "name": "유로스톡스 50"},
 ]
 
+# kind/name/pair/contract/sub carry through to the frontend so ticker
+# tiles open the same indicator popup as their matching panel rows.
 TICKER_STRIP = [
-    {"symbol": "^KS11", "label": "KOSPI"},
-    {"symbol": "^KQ11", "label": "KOSDAQ"},
-    {"symbol": "^IXIC", "label": "NASDAQ"},
-    {"symbol": "^GSPC", "label": "S&P 500"},
-    {"symbol": "USDKRW=X", "label": "USD/KRW"},
-    {"symbol": "USDJPY=X", "label": "USD/JPY"},
-    {"symbol": "CL=F", "label": "WTI"},
-    {"symbol": "GC=F", "label": "GOLD"},
-    {"symbol": "^TNX", "label": "US 10Y"},
+    {"symbol": "^KS11", "label": "KOSPI", "kind": "index", "name": "코스피"},
+    {"symbol": "^KQ11", "label": "KOSDAQ", "kind": "index", "name": "코스닥"},
+    {"symbol": "^IXIC", "label": "NASDAQ", "kind": "index", "name": "나스닥"},
+    {"symbol": "^GSPC", "label": "S&P 500", "kind": "index", "name": "S&P 500"},
+    {"symbol": "USDKRW=X", "label": "USD/KRW", "kind": "fx", "name": "달러/원", "pair": "USD/KRW"},
+    {"symbol": "USDJPY=X", "label": "USD/JPY", "kind": "fx", "name": "달러/엔", "pair": "USD/JPY"},
+    {"symbol": "CL=F", "label": "WTI", "kind": "commodity", "name": "WTI 원유", "contract": "CL"},
+    {"symbol": "GC=F", "label": "GOLD", "kind": "commodity", "name": "금", "contract": "GC"},
+    {"symbol": "^TNX", "label": "US 10Y", "kind": "rate", "name": "미 국채 10년", "sub": "10-Year Treasury"},
 ]
 
 INDEX_GROUPS = [
@@ -471,7 +473,11 @@ class MarketData:
             for g in FX_REGIONS
         ]
 
-        ticker = [self._row(t["symbol"], t["label"], up, down, flat) | {"label": t["label"]} for t in TICKER_STRIP]
+        ticker = [
+            self._row(t["symbol"], t["label"], up, down, flat)
+            | {k: t[k] for k in ("label", "kind", "name", "pair", "contract", "sub") if k in t}
+            for t in TICKER_STRIP
+        ]
 
         index_groups = [
             {

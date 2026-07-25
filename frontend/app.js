@@ -28,7 +28,7 @@
 
   function renderTicker(rows) {
     $("ticker-strip").innerHTML = rows.map((t) => `
-      <div style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(t)}>
+      <div class="clickable-row" data-kind="${esc(t.kind || "index")}" data-symbol="${esc(t.symbol)}" data-name="${esc(t.name || t.label)}"${t.pair ? ` data-pair="${esc(t.pair)}"` : ""}${t.contract ? ` data-contract="${esc(t.contract)}"` : ""}${t.sub ? ` data-sub="${esc(t.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(t)}>
         <span style="font-size:10px;letter-spacing:.06em;color:#5d5d60;text-transform:uppercase;white-space:nowrap">${esc(t.label)}</span>
         <span class="mono${t.stale ? " stale-dot" : ""}" style="font-size:15px;font-weight:500">${esc(t.price)}</span>
         <span class="mono" style="font-size:11px;color:${t.color}">${t.arrow} ${esc(t.pct)}</span>
@@ -157,7 +157,7 @@
 
   // Same pattern for FX / index / commodity / rate rows -> the generic
   // indicator popup (kind carried in data-kind).
-  for (const containerId of ["fx-regions", "idx-main", "rates-list", "kr-rates-list", "commodities-list"]) {
+  for (const containerId of ["ticker-strip", "fx-regions", "idx-main", "rates-list", "kr-rates-list", "commodities-list"]) {
     $(containerId).addEventListener("click", (ev) => {
       const row = ev.target.closest("[data-kind]");
       if (row) openIndicatorPopup(row.dataset.kind, row.dataset.symbol, row.dataset);
@@ -354,6 +354,7 @@
   function gsOpen(it) {
     gsHide();
     gsInput.value = "";
+    gsInput.blur(); // 모바일: 키보드 닫고 입력 포커스 줌 해제
     if (it.type === "stock") openStockPopup(it.symbol, it.name);
     else openIndicatorPopup(it.kind, it.symbol, it.data);
   }
