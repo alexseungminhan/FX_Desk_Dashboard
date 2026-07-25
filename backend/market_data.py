@@ -9,6 +9,7 @@ UST yield-curve points Yahoo actually publishes (13wk/5y/10y/30y).
 """
 from __future__ import annotations
 
+import gc
 import logging
 import time
 from collections import deque
@@ -277,19 +278,22 @@ class MarketData:
                 continue
 
     def poll_prices(self) -> None:
-        """Batch-fetch current intraday prices for every tracked symbol.
+        """Batch-fetch the current price for every tracked symbol.
 
-        period=5d/interval=5m (rather than 1d/1m) so weekends and
-        pre-/post-market gaps still resolve to the last real print
-        instead of an empty window — markets that are genuinely closed
-        show their last real close, not a blank.
+        Daily bars, not intraday ones: Yahoo updates today's daily bar
+        live during the session, so its Close IS the current price, and
+        on weekends/holidays the window still resolves to the last real
+        session's close. Two rows per symbol instead of a week of 5m
+        bars also keeps this 10s loop from churning hundreds of MB of
+        throwaway DataFrames — that churn showed up as a linear RSS
+        climb (→ OOM restarts) on small hosts.
         """
         symbols = self.all_symbols()
         try:
             data = yf.download(
                 tickers=" ".join(symbols),
-                period="5d",
-                interval="5m",
+                period="2d",
+                interval="1d",
                 group_by="ticker",
                 progress=False,
                 threads=True,
@@ -325,6 +329,11 @@ class MarketData:
                 st.stale = True
 
         self.last_snapshot_at = datetime.now(tz=KST)
+        # This loop runs every 10s forever — reclaim pandas' reference
+        # cycles right away instead of letting them pile up between
+        # generational GC passes.
+        del data
+        gc.collect()
 
     def poll_news(self) -> None:
         """Korean headlines from 네이버 증권 + English headlines from
