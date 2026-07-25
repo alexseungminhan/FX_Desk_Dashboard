@@ -13,10 +13,10 @@ from __future__ import annotations
 
 import html
 import logging
-import re
-from xml.etree import ElementTree as ET
 
 import requests
+
+import chart_range
 
 log = logging.getLogger("stock_detail")
 
@@ -30,7 +30,6 @@ _HEADERS = {
 
 _BASIC_URL = "https://m.stock.naver.com/api/stock/{code}/basic"
 _INTEGRATION_URL = "https://m.stock.naver.com/api/stock/{code}/integration"
-_CHART_URL = "https://fchart.stock.naver.com/sise.nhn?symbol={code}&timeframe=minute&count=200&requestType=0"
 _NEWS_URL = "https://m.stock.naver.com/api/news/stock/{code}?pageSize=5&page=1"
 
 
@@ -47,35 +46,6 @@ def _num(s) -> float | None:
         return float(str(s).replace(",", "").replace("+", ""))
     except ValueError:
         return None
-
-
-def _fetch_chart(code: str, w: int = 512, h: int = 96) -> dict | None:
-    try:
-        r = requests.get(_CHART_URL.format(code=code), headers=_HEADERS, timeout=8)
-        r.raise_for_status()
-        r.encoding = "euc-kr"
-        root = ET.fromstring(r.text)
-        rows = [it.get("data", "").split("|") for it in root.findall(".//item")]
-        rows = [p for p in rows if len(p) >= 5 and p[4] != "null"]
-        if not rows:
-            return None
-        last_date = rows[-1][0][:8]
-        closes = [float(p[4]) for p in rows if p[0][:8] == last_date]
-        if len(closes) < 2:
-            return None
-    except Exception:
-        log.exception("chart fetch failed for %s", code)
-        return None
-
-    lo, hi = min(closes), max(closes)
-    rng = (hi - lo) or 1.0
-    coords = [
-        (i / (len(closes) - 1) * w, h - ((v - lo) / rng) * (h - 2) - 1)
-        for i, v in enumerate(closes)
-    ]
-    line = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f} {y:.1f}" for i, (x, y) in enumerate(coords))
-    area = f"{line} L {w} {h} L 0 {h} Z"
-    return {"line": line, "area": area}
 
 
 def _fetch_news(code: str, limit: int = 3) -> list[dict]:
@@ -135,6 +105,6 @@ def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
         "per": stats.get("per", "—"),
         "pbr": stats.get("pbr", "—"),
         "foreignRate": stats.get("foreignRate", "—"),
-        "chart": _fetch_chart(code),
+        "chart": chart_range.get_chart("stock", symbol, "1D"),
         "news": _fetch_news(code),
     }

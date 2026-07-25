@@ -16,6 +16,8 @@ import logging
 
 import yfinance as yf
 
+import chart_range
+
 log = logging.getLogger("us_stock_detail")
 
 
@@ -51,28 +53,6 @@ def _fmt_volume(v) -> str:
 
 def _fmt_ratio(v) -> str:
     return f"{v:.2f}" if v is not None else "—"
-
-
-def _intraday_chart(symbol: str, w: int = 512, h: int = 96) -> dict | None:
-    try:
-        hist = yf.Ticker(symbol).history(period="1d", interval="5m")
-        if hist.empty:
-            hist = yf.Ticker(symbol).history(period="5d", interval="5m")
-        closes = hist["Close"].dropna().tolist()
-    except Exception:
-        log.exception("chart fetch failed for %s", symbol)
-        return None
-    if len(closes) < 2:
-        return None
-    lo, hi = min(closes), max(closes)
-    rng = (hi - lo) or 1.0
-    coords = [
-        (i / (len(closes) - 1) * w, h - ((v - lo) / rng) * (h - 2) - 1)
-        for i, v in enumerate(closes)
-    ]
-    line = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f} {y:.1f}" for i, (x, y) in enumerate(coords))
-    area = f"{line} L {w} {h} L 0 {h} Z"
-    return {"line": line, "area": area}
 
 
 def _fetch_news(symbol: str, limit: int = 3) -> list[dict]:
@@ -132,6 +112,6 @@ def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
         "per": _fmt_ratio(info.get("trailingPE")),
         "pbr": _fmt_ratio(info.get("priceToBook")),
         "foreignRate": "—",  # KRX-only concept, no US equivalent
-        "chart": _intraday_chart(symbol),
+        "chart": chart_range.get_chart("stock", symbol, "1D"),
         "news": _fetch_news(symbol),
     }

@@ -9,18 +9,18 @@ UST yield-curve points Yahoo actually publishes (13wk/5y/10y/30y).
 """
 from __future__ import annotations
 
-import json
 import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pandas as pd
 import yfinance as yf
 
+import fx_news
 import kr_movers
+import kr_rates
 import naver_news
 import us_movers
 import yahoo_news
@@ -123,32 +123,7 @@ COMMODITIES = [
     {"symbol": "ZS=F", "name": "대두", "contract": "ZS"},
 ]
 
-# Seed watchlist shown as "관심종목 시세" (real Yahoo Finance quotes) the
-# first time the app runs — after that the user's own additions/removals
-# (persisted to watchlist.json, see load/save below) take over. "국내
-# 등락 상위" itself is sourced separately from Naver Finance's real
-# market-wide ranking pages (see kr_movers.py) — Yahoo has no free
-# full-market screener for KRX, so a watchlist can't stand in for actual
-# top movers.
-DEFAULT_WATCHLIST = [
-    {"symbol": "005930.KS", "name": "삼성전자"},
-    {"symbol": "000660.KS", "name": "SK하이닉스"},
-    {"symbol": "035420.KS", "name": "NAVER"},
-    {"symbol": "035720.KS", "name": "카카오"},
-    {"symbol": "051910.KS", "name": "LG화학"},
-    {"symbol": "006400.KS", "name": "삼성SDI"},
-    {"symbol": "373220.KS", "name": "LG에너지솔루션"},
-    {"symbol": "207940.KS", "name": "삼성바이오로직스"},
-    {"symbol": "005380.KS", "name": "현대차"},
-    {"symbol": "000270.KS", "name": "기아"},
-    {"symbol": "105560.KS", "name": "KB금융"},
-    {"symbol": "055550.KS", "name": "신한지주"},
-    {"symbol": "012330.KS", "name": "현대모비스"},
-    {"symbol": "068270.KS", "name": "셀트리온"},
-    {"symbol": "247540.KQ", "name": "에코프로비엠"},
-]
-
-# Symbols always tracked regardless of the user's watchlist.
+# Every symbol the board tracks on the price poll.
 FIXED_SYMBOLS = sorted({
     *(row["symbol"] for g in FX_REGIONS for row in g["rows"]),
     *(r["symbol"] for r in TICKER_STRIP),
@@ -157,8 +132,6 @@ FIXED_SYMBOLS = sorted({
     *(r["symbol"] for r in RATES),
     *(r["symbol"] for r in COMMODITIES),
 })
-
-WATCHLIST_FILE = Path(__file__).resolve().parent / "watchlist.json"
 
 SPARK_LEN = 30
 
@@ -252,11 +225,11 @@ class MarketData:
     """Holds the latest known-good state for every tracked symbol."""
 
     def __init__(self) -> None:
-        self.watchlist: list[dict] = self._load_watchlist()
         self.states: dict[str, SymbolState] = {
-            s: SymbolState(symbol=s) for s in self.all_symbols()
+            s: SymbolState(symbol=s) for s in FIXED_SYMBOLS
         }
         self.news: list[dict] = []
+        self.fx_news: list[dict] = []
         self.last_snapshot_at: datetime | None = None
         self.mover_gainers: list[dict] = []
         self.mover_losers: list[dict] = []
@@ -268,62 +241,11 @@ class MarketData:
         self.us_losers: list[dict] = []
         self.us_most_active: list[dict] = []
         self.us_movers_stale: bool = True
-
-    # -- watchlist persistence -------------------------------------------
-
-    def _load_watchlist(self) -> list[dict]:
-        if WATCHLIST_FILE.exists():
-            try:
-                return json.loads(WATCHLIST_FILE.read_text())
-            except Exception:
-                log.exception("failed to read %s — falling back to default", WATCHLIST_FILE)
-        return [dict(w) for w in DEFAULT_WATCHLIST]
-
-    def _save_watchlist(self) -> None:
-        try:
-            WATCHLIST_FILE.write_text(json.dumps(self.watchlist, ensure_ascii=False, indent=2))
-        except Exception:
-            log.exception("failed to write %s", WATCHLIST_FILE)
+        self.kr_rates: list[dict] = []
+        self.kr_rates_stale: bool = True
 
     def all_symbols(self) -> list[str]:
-        return sorted({*FIXED_SYMBOLS, *(w["symbol"] for w in self.watchlist)})
-
-    def add_watchlist_item(self, symbol: str, name: str, market: str) -> None:
-        if any(w["symbol"] == symbol for w in self.watchlist):
-            return
-        self.watchlist.append({"symbol": symbol, "name": name, "market": market})
-        self._save_watchlist()
-        if symbol not in self.states:
-            self.states[symbol] = SymbolState(symbol=symbol)
-
-    def remove_watchlist_item(self, symbol: str) -> None:
-        self.watchlist = [w for w in self.watchlist if w["symbol"] != symbol]
-        self._save_watchlist()
-        self.states.pop(symbol, None)
-
-    def refresh_symbol(self, symbol: str) -> None:
-        """Fetch prev-close + current price for a single symbol — used
-        right after the user adds it, so they don't wait for the next
-        scheduled poll tick to see a real quote."""
-        st = self.states.get(symbol)
-        if st is None:
-            return
-        try:
-            hist = yf.Ticker(symbol).history(period="5d", interval="5m")
-            closes = hist["Close"].dropna()
-            if len(closes) == 0:
-                return
-            daily = yf.Ticker(symbol).history(period="5d", interval="1d")["Close"].dropna()
-            if len(daily) >= 2:
-                st.prev_close = float(daily.iloc[-2])
-            elif len(daily) == 1:
-                st.prev_close = float(daily.iloc[-1])
-            st.price = float(closes.iloc[-1])
-            st.history.append(st.price)
-            st.stale = False
-            st.last_ok = time.time()
-        except Exception:
-            log.exception("refresh_symbol failed for %s", symbol)
+        return list(FIXED_SYMBOLS)
 
     # -- data acquisition ---------------------------------------------
 
@@ -438,6 +360,31 @@ class MarketData:
         # Hard cap as a safety net against an unusually heavy news day —
         # not a normal limit, 24h of both feeds rarely gets near this.
         self.news = merged[:300]
+
+    def poll_fx_news(self) -> None:
+        """환율 주요뉴스 from Naver marketindex — shown inside the FX panel."""
+        try:
+            items = fx_news.fetch_fx_news(limit=10)
+        except Exception:
+            log.exception("fx news poll failed — keeping last known headlines")
+            return
+        if not items:
+            log.warning("fx news returned no rows — keeping last known headlines")
+            return
+        self.fx_news = items
+
+    def poll_kr_rates(self) -> None:
+        """국내 시장금리 from Naver marketindex (daily fixings)."""
+        try:
+            rows = kr_rates.fetch_kr_rates()
+        except Exception:
+            log.exception("poll_kr_rates failed — keeping last known fixings")
+            return
+        if not rows:
+            log.warning("poll_kr_rates returned no rows — keeping last known fixings")
+            return
+        self.kr_rates = rows
+        self.kr_rates_stale = False
 
     def poll_movers(self) -> None:
         """Real KOSPI+KOSDAQ top gainers/losers from Naver Finance — see
@@ -612,12 +559,18 @@ class MarketData:
         us_losers = [us_mover_row(m, i) for i, m in enumerate(self.us_losers)]
         us_most_active = [us_active_row(m, i) for i, m in enumerate(self.us_most_active)]
 
-        watchlist = []
-        for w in self.watchlist:
-            st = self.states.get(w["symbol"])
-            if st is None or st.price is None:
-                continue
-            watchlist.append(self._row(w["symbol"], w["name"], up, down, flat))
+        kr_rates_rows = []
+        for r in self.kr_rates:
+            chg = r["change"]
+            kr_rates_rows.append({
+                "code": r["code"],
+                "name": r["name"],
+                "value": f"{r['value']:.2f}%",
+                "chg": f"{chg * 100:+.0f}bp" if chg else "0bp",
+                "color": up if chg > 0 else down if chg < 0 else flat,
+                "arrow": "▲" if chg > 0 else "▼" if chg < 0 else "–",
+                "stale": self.kr_rates_stale,
+            })
 
         today_kst = datetime.now(tz=KST).date()
 
@@ -641,6 +594,16 @@ class MarketData:
             for n in self.news
         ]
 
+        fx_news_rows = [
+            {
+                "time": news_time(n["time"]),
+                "headline": n["title"],
+                "tag": n["press"],
+                "url": n["url"],
+            }
+            for n in self.fx_news
+        ]
+
         return {
             "asOf": self.last_snapshot_at.isoformat() if self.last_snapshot_at else None,
             "moversAsOf": self.movers_updated_at.isoformat() if self.movers_updated_at else None,
@@ -656,6 +619,7 @@ class MarketData:
             "usMostActive": us_most_active,
             "gainers": gainers,
             "losers": losers,
-            "watchlist": watchlist,
+            "krRates": kr_rates_rows,
+            "fxNews": fx_news_rows,
             "news": news,
         }

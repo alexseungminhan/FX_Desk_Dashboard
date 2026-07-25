@@ -9,10 +9,11 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+import chart_range
 import indicator_detail
 import naver_search
 import seibro_custody
@@ -25,6 +26,7 @@ log = logging.getLogger("fx-desk-board")
 
 PRICE_POLL_SECONDS = 10
 NEWS_POLL_SECONDS = 300
+KR_RATES_POLL_SECONDS = 600
 MOVERS_POLL_SECONDS = 60
 KR_MOST_TRADED_POLL_SECONDS = 60
 US_MOVERS_POLL_SECONDS = 90
@@ -117,9 +119,19 @@ async def _news_loop() -> None:
     while True:
         try:
             await asyncio.to_thread(market.poll_news)
+            await asyncio.to_thread(market.poll_fx_news)
         except Exception:
             log.exception("news loop iteration failed")
         await asyncio.sleep(NEWS_POLL_SECONDS)
+
+
+async def _kr_rates_loop() -> None:
+    while True:
+        try:
+            await asyncio.to_thread(market.poll_kr_rates)
+        except Exception:
+            log.exception("kr rates loop iteration failed")
+        await asyncio.sleep(KR_RATES_POLL_SECONDS)
 
 
 async def _prev_close_loop() -> None:
@@ -133,19 +145,26 @@ async def _prev_close_loop() -> None:
 
 @app.on_event("startup")
 async def startup() -> None:
-    # Seed prev-close + one price poll synchronously so the very first
-    # page load already has real numbers instead of blanks.
-    await asyncio.to_thread(market.refresh_prev_close)
+    # Seed everything before serving so the very first page load already
+    # has real numbers instead of blanks. Sources are independent, so
+    # they run concurrently — only poll_prices needs prev-close first
+    # (for the % baseline), so it runs after that gather.
+    await asyncio.gather(
+        asyncio.to_thread(market.refresh_prev_close),
+        asyncio.to_thread(market.poll_movers),
+        asyncio.to_thread(market.poll_kr_most_traded),
+        asyncio.to_thread(market.poll_us_movers),
+        asyncio.to_thread(market.poll_news),
+        asyncio.to_thread(market.poll_fx_news),
+        asyncio.to_thread(market.poll_kr_rates),
+    )
     await asyncio.to_thread(market.poll_prices)
-    await asyncio.to_thread(market.poll_movers)
-    await asyncio.to_thread(market.poll_kr_most_traded)
-    await asyncio.to_thread(market.poll_us_movers)
-    await asyncio.to_thread(market.poll_news)
     asyncio.create_task(_price_loop())
     asyncio.create_task(_movers_loop())
     asyncio.create_task(_kr_most_traded_loop())
     asyncio.create_task(_us_movers_loop())
     asyncio.create_task(_news_loop())
+    asyncio.create_task(_kr_rates_loop())
     asyncio.create_task(_prev_close_loop())
 
 
@@ -181,28 +200,7 @@ async def stock_detail_endpoint(symbol: str, name: str = "", scheme: str = "kr")
     detail = await asyncio.to_thread(fetch, symbol, name, up, down, flat)
     if detail is None:
         raise HTTPException(404, f"no data for {symbol}")
-    detail["inWatchlist"] = any(w["symbol"] == symbol for w in market.watchlist)
     return detail
-
-
-@app.post("/api/watchlist")
-async def add_to_watchlist(payload: dict = Body(...)) -> dict:
-    symbol, name, market_name = payload.get("symbol"), payload.get("name"), payload.get("market")
-    if not symbol or not name:
-        raise HTTPException(400, "symbol and name are required")
-    market.add_watchlist_item(symbol, name, market_name or "")
-    # Fetch the new symbol's price right away rather than making the
-    # user wait for the next scheduled poll tick.
-    await asyncio.to_thread(market.refresh_symbol, symbol)
-    await manager.broadcast()
-    return {"ok": True}
-
-
-@app.delete("/api/watchlist/{symbol}")
-async def remove_from_watchlist(symbol: str) -> dict:
-    market.remove_watchlist_item(symbol)
-    await manager.broadcast()
-    return {"ok": True}
 
 
 @app.get("/api/indicator/{kind}/{symbol:path}")
@@ -218,11 +216,23 @@ async def indicator_endpoint(
         detail = await asyncio.to_thread(indicator_detail.get_commodity_detail, symbol, name, contract, up, down, flat)
     elif kind == "rate":
         detail = await asyncio.to_thread(indicator_detail.get_rate_detail, symbol, name, sub, up, down, flat)
+    elif kind == "krrate":
+        detail = await asyncio.to_thread(indicator_detail.get_krrate_detail, symbol, name, up, down, flat)
     else:
         raise HTTPException(400, f"unknown indicator kind: {kind}")
     if detail is None:
         raise HTTPException(404, f"no data for {kind}/{symbol}")
     return detail
+
+
+@app.get("/api/chart/{kind}/{symbol:path}")
+async def chart_endpoint(kind: str, symbol: str, range: str = "1D") -> dict:
+    if range not in chart_range.RANGES:
+        raise HTTPException(400, f"unknown range: {range}")
+    chart = await asyncio.to_thread(chart_range.get_chart, kind, symbol, range)
+    if chart is None:
+        raise HTTPException(404, f"no chart for {kind}/{symbol} ({range})")
+    return chart
 
 
 @app.get("/api/seibro-custody")

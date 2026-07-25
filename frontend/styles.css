@@ -1,5 +1,5 @@
 /* Industry — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 :root {
   --color-bg: #f2f2f3;
@@ -295,13 +295,58 @@ a:hover { color: var(--color-accent-700); }
 .conn-dot.down { background: #c0392b; }
 .conn-dot.connecting { background: #d4a017; }
 
-/* — stock detail popup (FX Stock Popup.dc.html) — */
+/* — clickable rows (open detail popups) — */
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
-.dialog-backdrop { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; background: rgba(20, 28, 38, .55); padding: 24px; }
-.stk-dialog { width: 560px; max-width: 92vw; max-height: 92vh; overflow-y: auto; background: #f2f2f3; }
-.stk-close { border: 1px solid var(--color-divider); background: transparent; width: 32px; height: 32px; cursor: pointer; font-size: 16px; line-height: 1; color: #5d5d60; flex: none; }
-.stk-close:hover { background: rgba(89, 128, 166, .1); }
-.stat { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-bottom: 1px solid rgba(29, 31, 32, .06); }
-.stat b { font-size: 13.5px; font-weight: 500; }
-.stat span { font-size: 10.5px; color: #7a7a7d; letter-spacing: .02em; }
+
+/* — 상세 팝업 (popup.html 디자인: 종목/지표 공용) — */
+.pop-backdrop{position:fixed;inset:0;z-index:60;background:rgba(29,31,32,.42);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:44px 20px;overflow-y:auto}
+.pop-backdrop[hidden]{display:none}
+.pop{width:100%;max-width:720px;background:#f2f2f3;padding:20px 22px 18px;position:relative;box-shadow:var(--shadow-lg);font-family:var(--font-body);color:#1d1f20}
+.pop .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+.pop-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.pop-title-row{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.pop-name{font-family:var(--font-heading);font-weight:600;font-size:25px;letter-spacing:.01em}
+.pop-code{font-size:12px;color:#7a7a7d}
+.pop-px-row{display:flex;align-items:baseline;gap:11px;margin-top:9px;flex-wrap:wrap}
+.pop-px{font-size:33px;font-weight:500;line-height:1}
+.pop-chg{font-size:15px}
+.pop-asof{font-size:11px;color:#98989b;letter-spacing:.04em}
+.pop-x{flex:none;width:30px;height:30px;border:1px solid var(--color-divider);background:transparent;color:#5d5d60;font-size:13px;line-height:1;cursor:pointer;font-family:var(--font-body)}
+.pop-x:hover{background:rgba(29,31,32,.07);color:#1d1f20}
+
+.pop-chart-box{margin-top:16px;padding:11px 12px 8px;background:#e9e9ea;position:relative}
+.pop-chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.pop-chart-label{font-size:10px;color:#7a7a7d;letter-spacing:.1em;text-transform:uppercase}
+.pop-range{display:flex;border:1px solid var(--color-divider)}
+.pop-range button{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;padding:3px 9px;border:0;border-left:1px solid var(--color-divider);background:transparent;color:#5d5d60;cursor:pointer}
+.pop-range button:first-child{border-left:0}
+.pop-range button:hover{background:rgba(89,128,166,.14)}
+.pop-range button[aria-pressed="true"]{background:var(--color-accent);color:#f2f2f3}
+.pop-chart{display:block;width:100%;height:132px}
+.pop-axis{display:flex;justify-content:space-between;font-family:"IBM Plex Mono",monospace;font-size:10px;color:#7a7a7d;margin-top:2px}
+
+.pop-stats{margin-top:15px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}
+.pop-stats .stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.08)}
+.pop-stats .stat span{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#7a7a7d}
+.pop-stats .stat b{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500}
+
+.pop-sec-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:7px}
+.pop-news{margin-top:17px}
+.pop-news-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:7px 0;border-top:1px solid rgba(29,31,32,.08)}
+.pop-news-row a{font-size:12.5px;line-height:1.4;color:#416180;text-decoration:none;text-wrap:pretty}
+.pop-news-row a:hover{color:#2c455d;text-decoration:underline}
+.pop-news-row span{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:#98989b;white-space:nowrap}
+
+.pop-foot{margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pop-source{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#98989b;letter-spacing:.04em}
+.pop-actions{display:flex;gap:10px}
+.pop-actions .btn{padding:8px 16px;position:relative}
+
+@media (max-width:640px){
+  .pop-backdrop{padding:10px}
+  .pop{padding:14px 14px 12px;max-width:100%}
+  .pop-stats{grid-template-columns:repeat(2,1fr)}
+  .pop-name{font-size:21px}.pop-px{font-size:27px}
+}

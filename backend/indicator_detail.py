@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 import requests
 import yfinance as yf
 
+import chart_range
+import kr_rates
+
 log = logging.getLogger("indicator_detail")
 
 _HEADERS = {
@@ -50,32 +53,6 @@ def _get_naver_json(url: str) -> dict:
     return r.json()
 
 
-def _spark(closes: list[float], w: int = 476, h: int = 92):
-    closes = [c for c in closes if c is not None]
-    if len(closes) < 2:
-        return None, None, None
-    lo, hi = min(closes), max(closes)
-    rng = (hi - lo) or 1.0
-    coords = [
-        (i / (len(closes) - 1) * w, h - ((v - lo) / rng) * (h - 2) - 1)
-        for i, v in enumerate(closes)
-    ]
-    line = " ".join(f"{'M' if i == 0 else 'L'}{x:.1f} {y:.1f}" for i, (x, y) in enumerate(coords))
-    area = f"{line} L {w} {h} L 0 {h} Z"
-    return {"line": line, "area": area}, lo, hi
-
-
-def _intraday_chart(symbol: str):
-    try:
-        hist = yf.Ticker(symbol).history(period="1d", interval="5m")
-        if hist.empty:
-            hist = yf.Ticker(symbol).history(period="5d", interval="5m")
-        return _spark(hist["Close"].dropna().tolist())
-    except Exception:
-        log.exception("intraday chart fetch failed for %s", symbol)
-        return None, None, None
-
-
 def _pct_color(pct, up, down, flat):
     color = up if (pct or 0) > 0 else down if (pct or 0) < 0 else flat
     arrow = "▲" if (pct or 0) > 0 else "▼" if (pct or 0) < 0 else "–"
@@ -83,7 +60,7 @@ def _pct_color(pct, up, down, flat):
 
 
 def _base_result(title, subtitle, tag, price, chg, pct, color, arrow, decimals,
-                  chart_label, chart, chart_lo, chart_hi, stats, news):
+                  chart, stats, news):
     return {
         "title": title,
         "subtitle": subtitle,
@@ -93,8 +70,6 @@ def _base_result(title, subtitle, tag, price, chg, pct, color, arrow, decimals,
         "pct": f"{pct:+.2f}%" if pct is not None else "—",
         "color": color,
         "arrow": arrow,
-        "chartLabel": chart_label,
-        "chartRange": f"고 {_fmt(chart_hi, decimals)} / 저 {_fmt(chart_lo, decimals)}" if chart_hi is not None else "—",
         "chart": chart,
         "stats": stats,
         "news": news,
@@ -119,7 +94,7 @@ def get_fx_detail(symbol: str, pair: str, name: str, up: str, down: str, flat: s
     color, arrow = _pct_color(pct, up, down, flat)
     decimals = 4 if price < 50 else 2
 
-    chart, lo, hi = _intraday_chart(symbol)
+    chart = chart_range.get_chart("fx", symbol, "1D")
     bid, ask = info.get("bid"), info.get("ask")
 
     stats = [
@@ -133,14 +108,14 @@ def get_fx_detail(symbol: str, pair: str, name: str, up: str, down: str, flat: s
     ]
 
     return _base_result(pair, name, "SPOT", price, chg, pct, color, arrow, decimals,
-                         "당일 틱 · Intraday", chart, lo, hi, stats, [])
+                         chart, stats, [])
 
 
 # -- Index --------------------------------------------------------------
 
 def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> dict | None:
     naver_code = _NAVER_INDEX_CODE.get(symbol)
-    chart, lo, hi = _intraday_chart(symbol)
+    chart = chart_range.get_chart("index", symbol, "1D")
 
     if naver_code:
         try:
@@ -176,7 +151,7 @@ def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
         ]
         eng_name = basic.get("stockExchangeType", {}).get("nameEng", naver_code)
         return _base_result(basic.get("stockName", name), eng_name, "KRX 지수", price, chg, pct, color, arrow, 2,
-                             "당일 분봉 · Intraday", chart, lo, hi, stats, [])
+                             chart, stats, [])
 
     # International index — Yahoo only, no breadth/flow data available.
     try:
@@ -201,7 +176,7 @@ def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
     ]
     eng_name = info.get("shortName") or info.get("longName") or symbol
     return _base_result(name, eng_name, "지수", price, chg, pct, color, arrow, 2,
-                         "당일 분봉 · Intraday", chart, lo, hi, stats, [])
+                         chart, stats, [])
 
 
 # -- Commodity ------------------------------------------------------------
@@ -220,7 +195,7 @@ def get_commodity_detail(symbol: str, name: str, contract: str, up: str, down: s
     pct = (chg / prev * 100) if chg is not None and prev else None
     color, arrow = _pct_color(pct, up, down, flat)
 
-    chart, lo, hi = _intraday_chart(symbol)
+    chart = chart_range.get_chart("commodity", symbol, "1D")
 
     expiry = info.get("expireDate")
     expiry_str = datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%Y-%m") if expiry else "—"
@@ -237,7 +212,7 @@ def get_commodity_detail(symbol: str, name: str, contract: str, up: str, down: s
         {"label": "52주 최저", "value": _fmt(info.get("fiftyTwoWeekLow"))},
     ]
     return _base_result(name, contract, "근월 선물", price, chg, pct, color, arrow, 2,
-                         "당일 · Intraday", chart, lo, hi, stats, [])
+                         chart, stats, [])
 
 
 # -- Rate (our tracked UST yield-curve points) -----------------------------
@@ -262,16 +237,17 @@ def get_rate_detail(symbol: str, name: str, sub: str, up: str, down: str, flat: 
     arrow = "▲" if (chg or 0) > 0 else "▼" if (chg or 0) < 0 else "–"
 
     last30 = hist.tail(30).tolist()
-    chart, lo, hi = _spark(last30)
     avg30 = sum(last30) / len(last30) if last30 else None
+    hi30 = max(last30) if last30 else None
+    lo30 = min(last30) if last30 else None
     hi52 = float(hist_1y.max()) if len(hist_1y) else None
     lo52 = float(hist_1y.min()) if len(hist_1y) else None
 
     stats = [
         {"label": "전일 수익률", "value": _fmt(prev) + "%"},
         {"label": "30일 평균", "value": _fmt(avg30) + "%" if avg30 is not None else "—"},
-        {"label": "30일 최고", "value": _fmt(hi) + "%" if hi is not None else "—"},
-        {"label": "30일 최저", "value": _fmt(lo) + "%" if lo is not None else "—"},
+        {"label": "30일 최고", "value": _fmt(hi30) + "%" if hi30 is not None else "—"},
+        {"label": "30일 최저", "value": _fmt(lo30) + "%" if lo30 is not None else "—"},
         {"label": "52주 최고", "value": _fmt(hi52) + "%" if hi52 is not None else "—"},
         {"label": "52주 최저", "value": _fmt(lo52) + "%" if lo52 is not None else "—"},
     ]
@@ -285,9 +261,55 @@ def get_rate_detail(symbol: str, name: str, sub: str, up: str, down: str, flat: 
         "pct": f"전일 {_fmt(prev)}%" if prev is not None else "—",
         "color": color,
         "arrow": arrow,
-        "chartLabel": "최근 30영업일",
-        "chartRange": f"범위 {_fmt(lo)} ~ {_fmt(hi)}" if hi is not None else "—",
-        "chart": chart,
+        "chart": chart_range.get_chart("rate", symbol, "1D"),
+        "stats": stats,
+        "news": [],
+    }
+
+
+# -- KR rate (네이버 국내시장금리 daily fixings) ---------------------------
+
+def get_krrate_detail(code: str, name: str, up: str, down: str, flat: str) -> dict | None:
+    try:
+        rows = kr_rates.fetch_kr_rates()
+    except Exception:
+        log.exception("kr rates fetch failed for %s", code)
+        return None
+    row = next((r for r in rows if r["code"] == code), None)
+    if row is None:
+        return None
+
+    value, change = row["value"], row["change"]
+    color = up if change > 0 else down if change < 0 else flat
+    arrow = "▲" if change > 0 else "▼" if change < 0 else "–"
+
+    try:
+        hist = kr_rates.fetch_rate_history(code, 22)
+    except Exception:
+        log.exception("kr rate history fetch failed for %s", code)
+        hist = []
+    vals = [h["value"] for h in hist]
+    avg30 = sum(vals) / len(vals) if vals else None
+
+    stats = [
+        {"label": "전일 고시", "value": _fmt(vals[-2]) + "%" if len(vals) >= 2 else "—"},
+        {"label": "1개월 평균", "value": _fmt(avg30) + "%" if avg30 is not None else "—"},
+        {"label": "1개월 최고", "value": _fmt(max(vals)) + "%" if vals else "—"},
+        {"label": "1개월 최저", "value": _fmt(min(vals)) + "%" if vals else "—"},
+        {"label": "1개월 변화", "value": f"{(value - vals[0]) * 100:+.0f}bp" if vals else "—"},
+        {"label": "기준일", "value": hist[-1]["date"] if hist else "—"},
+    ]
+
+    return {
+        "title": row["name"] if not name else name,
+        "subtitle": "국내 시장금리 · 일별 고시",
+        "tag": "KR 금리",
+        "price": _fmt(value) + "%",
+        "chg": f"{change * 100:+.0f}bp",
+        "pct": f"{change:+.2f}%p" if change else "보합",
+        "color": color,
+        "arrow": arrow,
+        "chart": chart_range.get_chart("krrate", code, "1D"),
         "stats": stats,
         "news": [],
     }

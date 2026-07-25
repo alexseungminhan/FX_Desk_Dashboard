@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="/static/styles.css?v=2">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -34,11 +34,9 @@
     .page-pad{padding:14px 12px 24px !important;gap:16px !important}
     .page-pad > .blueprint,.row-pair > .blueprint{padding:14px 12px !important}
     .nav{flex-wrap:wrap;padding:10px 14px !important;gap:6px 14px !important}
-    #fx-regions,#idx-main,#watchlist-list{grid-template-columns:1fr !important}
+    #fx-regions,#idx-main{grid-template-columns:1fr !important}
     .panel-head{flex-wrap:wrap;gap:6px}
-    .stat-grid{grid-template-columns:repeat(2,1fr) !important}
-    .dialog-backdrop{padding:10px !important}
-    .stk-dialog{max-width:100% !important;max-height:96vh !important}
+    #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
   }
 </style>
 </head>
@@ -47,8 +45,12 @@
 <div style="max-width:1180px;margin:0 auto;background:#f2f2f3;border-left:1px solid var(--color-divider);border-right:1px solid var(--color-divider);min-height:100vh">
 
   <!-- header -->
-  <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:16px 26px;position:sticky;top:0;z-index:10;background:#f2f2f3">
-    <span class="nav-brand" style="font-size:20px">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:12px;font-weight:400;color:#7a7a7d;letter-spacing:.14em;text-transform:uppercase">Market Board</span></span>
+  <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:16px 26px;position:sticky;top:0;z-index:30;background:#f2f2f3">
+    <span class="nav-brand" style="font-size:20px;margin-right:0">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:12px;font-weight:400;color:#7a7a7d;letter-spacing:.14em;text-transform:uppercase">Market Board</span></span>
+    <div id="gsearch-wrap" style="position:relative;flex:1;max-width:360px;margin-right:auto">
+      <input id="global-search" class="input" type="text" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
+      <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
+    </div>
     <span id="conn-badge" class="conn-badge"><span id="conn-dot" class="conn-dot connecting"></span><span id="conn-text">연결 중…</span></span>
     <span class="mono" id="clock" style="font-size:13px;font-weight:500"></span>
     <span class="mono" id="today" style="font-size:12px;color:#7a7a7d"></span>
@@ -71,6 +73,10 @@
         <div id="fx-col-1"></div>
         <div id="fx-col-2"></div>
       </div>
+      <div style="margin-top:14px;border-top:1px solid var(--color-divider);padding-top:10px">
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:4px">환율 주요 뉴스 <span style="color:#98989b;letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
+        <div id="fx-news-list"></div>
+      </div>
     </div>
 
     <!-- body: full-width paired rows -->
@@ -87,8 +93,21 @@
         </div>
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">금리 <span class="kop" style="font-size:11px">Rates · US Treasury Yield Curve</span></h4>
+          <h4 style="margin:0 0 10px">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
           <div id="rates-list"></div>
+        </div>
+    </div>
+
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
+          <div id="kr-rates-list"></div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
+          <div id="commodities-list"></div>
         </div>
     </div>
 
@@ -141,23 +160,6 @@
         </div>
     </div>
 
-    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
-        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
-          <div id="commodities-list"></div>
-        </div>
-        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3;position:relative">
-          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">관심종목 시세 <span class="kop" style="font-size:11px">Watchlist</span></h4>
-          <div style="position:relative;margin-bottom:10px">
-            <input id="watchlist-search" class="input" type="text" placeholder="종목명 검색 후 추가 (예: 삼성전자)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
-            <div id="watchlist-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-md);z-index:20;max-height:220px;overflow-y:auto"></div>
-          </div>
-          <div id="watchlist-list" style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px"></div>
-        </div>
-    </div>
-
     <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
@@ -193,102 +195,147 @@
   </div>
 </div>
 
-<!-- 종목 상세 팝업 (FX Stock Popup.dc.html 기반) -->
-<div id="stock-popup-backdrop" class="dialog-backdrop" style="display:none">
-  <div class="dialog blueprint stk-dialog" role="dialog" aria-modal="true" aria-labelledby="stk-name">
+<!-- 종목 상세 팝업 (popup.html 디자인) -->
+<div id="stock-popup-backdrop" class="pop-backdrop" hidden>
+  <div class="pop blueprint" role="dialog" aria-modal="true" aria-labelledby="stk-name">
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <div class="pop-head">
       <div>
-        <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
-          <span id="stk-name" style="font-family:var(--font-heading);font-weight:600;font-size:24px;letter-spacing:.01em"></span>
-          <span id="stk-code" class="mono" style="font-size:12px;color:#7a7a7d"></span>
-          <span id="stk-market" class="tag tag-outline" style="font-size:10px;padding:1px 7px"></span>
+        <div class="pop-title-row">
+          <span id="stk-name" class="pop-name"></span>
+          <span id="stk-code" class="mono pop-code"></span>
+          <span id="stk-market" class="tag tag-outline" style="font-size:10px;padding:1px 7px;letter-spacing:.08em"></span>
         </div>
-        <div style="display:flex;align-items:baseline;gap:11px;margin-top:8px">
-          <span id="stk-price" class="mono" style="font-size:32px;font-weight:600;line-height:1"></span>
-          <span id="stk-chg" class="mono" style="font-size:15px"></span>
+        <div class="pop-px-row">
+          <span id="stk-price" class="mono pop-px"></span>
+          <span id="stk-chg" class="mono pop-chg"></span>
+          <span id="stk-asof" class="pop-asof"></span>
         </div>
       </div>
-      <button type="button" id="stk-close" class="stk-close" aria-label="닫기">✕</button>
+      <button type="button" id="stk-close" class="pop-x" aria-label="닫기">✕</button>
     </div>
 
-    <div class="blueprint" style="margin-top:16px;padding:12px 12px 6px;background:#e9e9ea;position:relative">
+    <div class="pop-chart-box blueprint">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7a7d;margin-bottom:4px;letter-spacing:.08em;text-transform:uppercase">
-        <span>당일 분봉 · Intraday</span><span id="stk-hilo"></span>
+      <div class="pop-chart-head">
+        <span id="stk-chart-label" class="pop-chart-label">당일 분봉 · Intraday</span>
+        <span class="pop-range" id="stk-range">
+          <button type="button" data-range="1D" aria-pressed="true">1D</button>
+          <button type="button" data-range="1W" aria-pressed="false">1W</button>
+          <button type="button" data-range="1M" aria-pressed="false">1M</button>
+          <button type="button" data-range="1Y" aria-pressed="false">1Y</button>
+        </span>
       </div>
-      <div id="stk-chart"></div>
+      <svg class="pop-chart" viewBox="0 0 640 132" preserveAspectRatio="none">
+        <line x1="0" y1="33" x2="640" y2="33" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <line x1="0" y1="66" x2="640" y2="66" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <line x1="0" y1="99" x2="640" y2="99" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <path id="stk-area" fill="rgba(89,128,166,.14)" d=""></path>
+        <path id="stk-line" fill="none" stroke="#5980a6" stroke-width="1.6" d=""></path>
+        <line id="stk-cross" x1="0" y1="0" x2="0" y2="132" stroke="#5980a6" stroke-opacity=".3" stroke-dasharray="2 3"></line>
+        <circle id="stk-dot" r="3" fill="#5980a6" cx="0" cy="0"></circle>
+      </svg>
+      <div class="pop-axis">
+        <span id="stk-axis-l"></span>
+        <span id="stk-hilo"></span>
+        <span id="stk-axis-r"></span>
+      </div>
     </div>
 
-    <div class="stat-grid" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 20px">
-      <div class="stat"><span>거래량 (주)</span><b class="mono" id="stk-volume"></b></div>
-      <div class="stat"><span>거래대금</span><b class="mono" id="stk-tradingValue"></b></div>
-      <div class="stat"><span>시가총액</span><b class="mono" id="stk-marketCap"></b></div>
-      <div class="stat"><span>시가</span><b class="mono" id="stk-open"></b></div>
-      <div class="stat"><span>고가</span><b class="mono" id="stk-high"></b></div>
-      <div class="stat"><span>저가</span><b class="mono" id="stk-low"></b></div>
-      <div class="stat"><span>52주 최고</span><b class="mono" id="stk-week52High"></b></div>
-      <div class="stat"><span>52주 최저</span><b class="mono" id="stk-week52Low"></b></div>
-      <div class="stat"><span>외국인 소진율</span><b class="mono" id="stk-foreignRate"></b></div>
-      <div class="stat"><span>PER</span><b class="mono" id="stk-per"></b></div>
-      <div class="stat"><span>PBR</span><b class="mono" id="stk-pbr"></b></div>
-      <div class="stat"><span>전일 종가</span><b class="mono" id="stk-prevClose"></b></div>
+    <div class="pop-stats">
+      <div class="stat"><span>거래량 (주)</span><b id="stk-volume"></b></div>
+      <div class="stat"><span>거래대금</span><b id="stk-tradingValue"></b></div>
+      <div class="stat"><span>시가총액</span><b id="stk-marketCap"></b></div>
+      <div class="stat"><span>시가</span><b id="stk-open"></b></div>
+      <div class="stat"><span>고가</span><b id="stk-high"></b></div>
+      <div class="stat"><span>저가</span><b id="stk-low"></b></div>
+      <div class="stat"><span>52주 최고</span><b id="stk-week52High"></b></div>
+      <div class="stat"><span>52주 최저</span><b id="stk-week52Low"></b></div>
+      <div class="stat"><span>외국인 소진율</span><b id="stk-foreignRate"></b></div>
+      <div class="stat"><span>PER</span><b id="stk-per"></b></div>
+      <div class="stat"><span>PBR</span><b id="stk-pbr"></b></div>
+      <div class="stat"><span>전일 종가</span><b id="stk-prevClose"></b></div>
     </div>
 
-    <div style="margin-top:16px">
-      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">관련 뉴스 Headlines</div>
+    <div class="pop-news">
+      <div class="pop-sec-label">관련 뉴스 Headlines</div>
       <div id="stk-news"></div>
     </div>
 
-    <div class="dialog-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px">
-      <button type="button" id="stk-close-btn" class="btn btn-secondary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
-      <button type="button" id="stk-watchlist-btn" class="btn btn-primary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><span id="stk-watchlist-label">☆ 관심종목 추가</span></button>
+    <div class="pop-foot">
+      <span id="stk-source" class="pop-source"></span>
+      <span class="pop-actions">
+        <button type="button" id="stk-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+      </span>
     </div>
   </div>
 </div>
 
-<!-- 지표 상세 팝업 (FX Market Popups.dc.html 기반: 환율/지수/원자재/금리 공용) -->
-<div id="indicator-popup-backdrop" class="dialog-backdrop" style="display:none">
-  <div class="dialog blueprint stk-dialog" role="dialog" aria-modal="true" aria-labelledby="ind-title">
+<!-- 지표 상세 팝업 (환율/지수/원자재/미국 금리/한국 금리 공용, popup.html 디자인) -->
+<div id="indicator-popup-backdrop" class="pop-backdrop" hidden>
+  <div class="pop blueprint" role="dialog" aria-modal="true" aria-labelledby="ind-title">
     <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
 
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+    <div class="pop-head">
       <div>
-        <div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">
-          <span id="ind-title" style="font-family:var(--font-heading);font-weight:600;font-size:24px"></span>
-          <span id="ind-subtitle" style="font-size:12px;color:#7a7a7d"></span>
-          <span id="ind-tag" class="tag tag-outline" style="font-size:10px;padding:1px 7px"></span>
+        <div class="pop-title-row">
+          <span id="ind-title" class="pop-name"></span>
+          <span id="ind-subtitle" class="pop-code"></span>
+          <span id="ind-tag" class="tag tag-outline" style="font-size:10px;padding:1px 7px;letter-spacing:.08em"></span>
         </div>
-        <div style="display:flex;align-items:baseline;gap:11px;margin-top:8px;flex-wrap:wrap">
-          <span id="ind-price" class="mono" style="font-size:32px;font-weight:600;line-height:1"></span>
-          <span id="ind-chg" class="mono" style="font-size:14px"></span>
+        <div class="pop-px-row">
+          <span id="ind-price" class="mono pop-px"></span>
+          <span id="ind-chg" class="mono pop-chg"></span>
+          <span id="ind-asof" class="pop-asof"></span>
         </div>
       </div>
-      <button type="button" id="ind-close" class="stk-close" aria-label="닫기">✕</button>
+      <button type="button" id="ind-close" class="pop-x" aria-label="닫기">✕</button>
     </div>
 
-    <div class="blueprint" style="margin-top:16px;padding:12px 12px 6px;background:#e9e9ea;position:relative">
+    <div class="pop-chart-box blueprint">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:#7a7a7d;margin-bottom:4px;letter-spacing:.08em;text-transform:uppercase">
-        <span id="ind-chart-label"></span><span id="ind-chart-range"></span>
+      <div class="pop-chart-head">
+        <span id="ind-chart-label" class="pop-chart-label"></span>
+        <span class="pop-range" id="ind-range">
+          <button type="button" data-range="1D" aria-pressed="true">1D</button>
+          <button type="button" data-range="1W" aria-pressed="false">1W</button>
+          <button type="button" data-range="1M" aria-pressed="false">1M</button>
+          <button type="button" data-range="1Y" aria-pressed="false">1Y</button>
+        </span>
       </div>
-      <div id="ind-chart"></div>
+      <svg class="pop-chart" viewBox="0 0 640 132" preserveAspectRatio="none">
+        <line x1="0" y1="33" x2="640" y2="33" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <line x1="0" y1="66" x2="640" y2="66" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <line x1="0" y1="99" x2="640" y2="99" stroke="#1d1f20" stroke-opacity=".07"></line>
+        <path id="ind-area" fill="rgba(89,128,166,.14)" d=""></path>
+        <path id="ind-line" fill="none" stroke="#5980a6" stroke-width="1.6" d=""></path>
+        <line id="ind-cross" x1="0" y1="0" x2="0" y2="132" stroke="#5980a6" stroke-opacity=".3" stroke-dasharray="2 3"></line>
+        <circle id="ind-dot" r="3" fill="#5980a6" cx="0" cy="0"></circle>
+      </svg>
+      <div class="pop-axis">
+        <span id="ind-axis-l"></span>
+        <span id="ind-chart-range"></span>
+        <span id="ind-axis-r"></span>
+      </div>
     </div>
 
-    <div id="ind-stats" class="stat-grid" style="margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px"></div>
+    <div id="ind-stats" class="pop-stats"></div>
 
-    <div id="ind-news-wrap" style="margin-top:16px">
-      <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:6px">관련 뉴스 Headlines</div>
+    <div id="ind-news-wrap" class="pop-news">
+      <div class="pop-sec-label">관련 뉴스 Headlines</div>
       <div id="ind-news"></div>
     </div>
 
-    <div class="dialog-actions" style="margin-top:18px;display:flex;justify-content:flex-end;gap:10px">
-      <button type="button" id="ind-close-btn" class="btn btn-secondary blueprint" style="position:relative"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+    <div class="pop-foot">
+      <span id="ind-source" class="pop-source"></span>
+      <span class="pop-actions">
+        <button type="button" id="ind-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+      </span>
     </div>
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=2"></script>
 </body>
 </html>
