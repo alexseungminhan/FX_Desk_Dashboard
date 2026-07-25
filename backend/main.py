@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -19,6 +20,7 @@ import naver_search
 import seibro_custody
 import stock_detail
 import ttl_cache
+import us_search
 import us_stock_detail
 from market_data import MarketData
 
@@ -196,6 +198,15 @@ CHART_CACHE_TTL = 60
 SEARCH_CACHE_TTL = 300
 
 
+def _search_all_markets(q: str) -> list[dict] | None:
+    # KR (네이버) and US (Yahoo) autocomplete are independent upstreams —
+    # query both at once so the slower one doesn't serialize the other.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        kr = pool.submit(naver_search.search_stocks, q)
+        us = pool.submit(us_search.search_stocks, q)
+        return (kr.result() + us.result()) or None
+
+
 @app.get("/api/search")
 async def search(q: str = "") -> list[dict]:
     # Empty results aren't cached (get_or_fetch skips None) — the name
@@ -203,7 +214,7 @@ async def search(q: str = "") -> list[dict]:
     # miss would pin "no results" for the whole TTL.
     res = await asyncio.to_thread(
         ttl_cache.get_or_fetch, f"search:{q}", SEARCH_CACHE_TTL,
-        lambda: naver_search.search_stocks(q) or None,
+        lambda: _search_all_markets(q),
     )
     return res or []
 
