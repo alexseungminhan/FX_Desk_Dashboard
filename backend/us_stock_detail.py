@@ -13,6 +13,7 @@ than a blank.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import yfinance as yf
 
@@ -72,11 +73,19 @@ def _fetch_news(symbol: str, limit: int = 3) -> list[dict]:
 
 
 def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> dict | None:
-    try:
-        info = yf.Ticker(symbol).get_info()
-    except Exception:
-        log.exception("us stock detail fetch failed for %s", symbol)
-        return None
+    # get_info() is the slow call here (often 1s+); chart and news are
+    # independent of it, so all three run concurrently.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_info = pool.submit(lambda: yf.Ticker(symbol).get_info())
+        f_chart = pool.submit(chart_range.get_chart, "stock", symbol, "1D")
+        f_news = pool.submit(_fetch_news, symbol)
+        try:
+            info = f_info.result()
+        except Exception:
+            log.exception("us stock detail fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
+        news = f_news.result()
 
     price = info.get("regularMarketPrice") or info.get("currentPrice")
     if price is None:
@@ -112,6 +121,6 @@ def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
         "per": _fmt_ratio(info.get("trailingPE")),
         "pbr": _fmt_ratio(info.get("priceToBook")),
         "foreignRate": "—",  # KRX-only concept, no US equivalent
-        "chart": chart_range.get_chart("stock", symbol, "1D"),
-        "news": _fetch_news(symbol),
+        "chart": chart,
+        "news": news,
     }

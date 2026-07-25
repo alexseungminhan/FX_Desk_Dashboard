@@ -20,6 +20,7 @@ throughout this app.
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 import requests
@@ -79,11 +80,15 @@ def _base_result(title, subtitle, tag, price, chg, pct, color, arrow, decimals,
 # -- FX ----------------------------------------------------------------
 
 def get_fx_detail(symbol: str, pair: str, name: str, up: str, down: str, flat: str) -> dict | None:
-    try:
-        info = yf.Ticker(symbol).get_info()
-    except Exception:
-        log.exception("fx info fetch failed for %s", symbol)
-        return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_info = pool.submit(lambda: yf.Ticker(symbol).get_info())
+        f_chart = pool.submit(chart_range.get_chart, "fx", symbol, "1D")
+        try:
+            info = f_info.result()
+        except Exception:
+            log.exception("fx info fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
 
     price = info.get("regularMarketPrice") or info.get("bid")
     if price is None:
@@ -94,7 +99,6 @@ def get_fx_detail(symbol: str, pair: str, name: str, up: str, down: str, flat: s
     color, arrow = _pct_color(pct, up, down, flat)
     decimals = 4 if price < 50 else 2
 
-    chart = chart_range.get_chart("fx", symbol, "1D")
     bid, ask = info.get("bid"), info.get("ask")
 
     stats = [
@@ -115,15 +119,19 @@ def get_fx_detail(symbol: str, pair: str, name: str, up: str, down: str, flat: s
 
 def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> dict | None:
     naver_code = _NAVER_INDEX_CODE.get(symbol)
-    chart = chart_range.get_chart("index", symbol, "1D")
 
     if naver_code:
-        try:
-            basic = _get_naver_json(f"https://m.stock.naver.com/api/index/{naver_code}/basic")
-            integ = _get_naver_json(f"https://m.stock.naver.com/api/index/{naver_code}/integration")
-        except Exception:
-            log.exception("naver index fetch failed for %s", symbol)
-            return None
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_chart = pool.submit(chart_range.get_chart, "index", symbol, "1D")
+            f_basic = pool.submit(_get_naver_json, f"https://m.stock.naver.com/api/index/{naver_code}/basic")
+            f_integ = pool.submit(_get_naver_json, f"https://m.stock.naver.com/api/index/{naver_code}/integration")
+            try:
+                basic = f_basic.result()
+                integ = f_integ.result()
+            except Exception:
+                log.exception("naver index fetch failed for %s", symbol)
+                return None
+            chart = f_chart.result()
 
         price = float(basic["closePrice"].replace(",", ""))
         chg = float(basic["compareToPreviousClosePrice"].replace(",", "").replace("+", ""))
@@ -154,11 +162,15 @@ def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
                              chart, stats, [])
 
     # International index — Yahoo only, no breadth/flow data available.
-    try:
-        info = yf.Ticker(symbol).get_info()
-    except Exception:
-        log.exception("index info fetch failed for %s", symbol)
-        return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_info = pool.submit(lambda: yf.Ticker(symbol).get_info())
+        f_chart = pool.submit(chart_range.get_chart, "index", symbol, "1D")
+        try:
+            info = f_info.result()
+        except Exception:
+            log.exception("index info fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
     price = info.get("regularMarketPrice")
     if price is None:
         return None
@@ -182,11 +194,15 @@ def get_index_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
 # -- Commodity ------------------------------------------------------------
 
 def get_commodity_detail(symbol: str, name: str, contract: str, up: str, down: str, flat: str) -> dict | None:
-    try:
-        info = yf.Ticker(symbol).get_info()
-    except Exception:
-        log.exception("commodity info fetch failed for %s", symbol)
-        return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_info = pool.submit(lambda: yf.Ticker(symbol).get_info())
+        f_chart = pool.submit(chart_range.get_chart, "commodity", symbol, "1D")
+        try:
+            info = f_info.result()
+        except Exception:
+            log.exception("commodity info fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
     price = info.get("regularMarketPrice")
     if price is None:
         return None
@@ -194,8 +210,6 @@ def get_commodity_detail(symbol: str, name: str, contract: str, up: str, down: s
     chg = price - prev if prev else None
     pct = (chg / prev * 100) if chg is not None and prev else None
     color, arrow = _pct_color(pct, up, down, flat)
-
-    chart = chart_range.get_chart("commodity", symbol, "1D")
 
     expiry = info.get("expireDate")
     expiry_str = datetime.fromtimestamp(expiry, tz=timezone.utc).strftime("%Y-%m") if expiry else "—"
@@ -218,14 +232,19 @@ def get_commodity_detail(symbol: str, name: str, contract: str, up: str, down: s
 # -- Rate (our tracked UST yield-curve points) -----------------------------
 
 def get_rate_detail(symbol: str, name: str, sub: str, up: str, down: str, flat: str) -> dict | None:
-    try:
-        t = yf.Ticker(symbol)
-        info = t.get_info()
-        hist = t.history(period="3mo", interval="1d")["Close"].dropna()
-        hist_1y = t.history(period="1y", interval="1d")["Close"].dropna()
-    except Exception:
-        log.exception("rate info fetch failed for %s", symbol)
-        return None
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_info = pool.submit(lambda: yf.Ticker(symbol).get_info())
+        f_hist = pool.submit(lambda: yf.Ticker(symbol).history(period="3mo", interval="1d")["Close"].dropna())
+        f_hist_1y = pool.submit(lambda: yf.Ticker(symbol).history(period="1y", interval="1d")["Close"].dropna())
+        f_chart = pool.submit(chart_range.get_chart, "rate", symbol, "1D")
+        try:
+            info = f_info.result()
+            hist = f_hist.result()
+            hist_1y = f_hist_1y.result()
+        except Exception:
+            log.exception("rate info fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
 
     price = info.get("regularMarketPrice")
     prev = info.get("previousClose")
@@ -261,7 +280,7 @@ def get_rate_detail(symbol: str, name: str, sub: str, up: str, down: str, flat: 
         "pct": f"전일 {_fmt(prev)}%" if prev is not None else "—",
         "color": color,
         "arrow": arrow,
-        "chart": chart_range.get_chart("rate", symbol, "1D"),
+        "chart": chart,
         "stats": stats,
         "news": [],
     }
@@ -270,11 +289,19 @@ def get_rate_detail(symbol: str, name: str, sub: str, up: str, down: str, flat: 
 # -- KR rate (네이버 국내시장금리 daily fixings) ---------------------------
 
 def get_krrate_detail(code: str, name: str, up: str, down: str, flat: str) -> dict | None:
-    try:
-        rows = kr_rates.fetch_kr_rates()
-    except Exception:
-        log.exception("kr rates fetch failed for %s", code)
-        return None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_rows = pool.submit(kr_rates.fetch_kr_rates)
+        f_hist = pool.submit(kr_rates.fetch_rate_history, code, 22)
+        try:
+            rows = f_rows.result()
+        except Exception:
+            log.exception("kr rates fetch failed for %s", code)
+            return None
+        try:
+            hist = f_hist.result()
+        except Exception:
+            log.exception("kr rate history fetch failed for %s", code)
+            hist = []
     row = next((r for r in rows if r["code"] == code), None)
     if row is None:
         return None
@@ -282,14 +309,22 @@ def get_krrate_detail(code: str, name: str, up: str, down: str, flat: str) -> di
     value, change = row["value"], row["change"]
     color = up if change > 0 else down if change < 0 else flat
     arrow = "▲" if change > 0 else "▼" if change < 0 else "–"
-
-    try:
-        hist = kr_rates.fetch_rate_history(code, 22)
-    except Exception:
-        log.exception("kr rate history fetch failed for %s", code)
-        hist = []
     vals = [h["value"] for h in hist]
     avg30 = sum(vals) / len(vals) if vals else None
+
+    # 1D 차트(최근 5영업일)는 이미 받아둔 이력에서 바로 만든다 —
+    # chart_range를 다시 부르면 같은 페이지를 한 번 더 긁게 된다.
+    chart = None
+    last5 = hist[-5:]
+    if len(last5) >= 2:
+        vals5 = [h["value"] for h in last5]
+        chart = {
+            "values": vals5,
+            "axisL": last5[0]["date"][2:],
+            "axisR": last5[-1]["date"][2:],
+            "label": "일별 고시 · Daily Fixing",
+            "hiloText": f"고 {max(vals5):,.2f}% · 저 {min(vals5):,.2f}%",
+        }
 
     stats = [
         {"label": "전일 고시", "value": _fmt(vals[-2]) + "%" if len(vals) >= 2 else "—"},
@@ -309,7 +344,7 @@ def get_krrate_detail(code: str, name: str, up: str, down: str, flat: str) -> di
         "pct": f"{change:+.2f}%p" if change else "보합",
         "color": color,
         "arrow": arrow,
-        "chart": chart_range.get_chart("krrate", code, "1D"),
+        "chart": chart,
         "stats": stats,
         "news": [],
     }

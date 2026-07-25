@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import html
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 
@@ -66,12 +67,21 @@ def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
     code, _, suffix = symbol.partition(".")
     market = {"KS": "KOSPI", "KQ": "KOSDAQ"}.get(suffix, suffix)
 
-    try:
-        basic = _get_json(_BASIC_URL.format(code=code))
-        integration = _get_json(_INTEGRATION_URL.format(code=code))
-    except Exception:
-        log.exception("naver stock detail fetch failed for %s", symbol)
-        return None
+    # The four upstream calls are independent — run them concurrently so
+    # the popup opens in one round-trip's time instead of four.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        f_basic = pool.submit(_get_json, _BASIC_URL.format(code=code))
+        f_integration = pool.submit(_get_json, _INTEGRATION_URL.format(code=code))
+        f_chart = pool.submit(chart_range.get_chart, "stock", symbol, "1D")
+        f_news = pool.submit(_fetch_news, code)
+        try:
+            basic = f_basic.result()
+            integration = f_integration.result()
+        except Exception:
+            log.exception("naver stock detail fetch failed for %s", symbol)
+            return None
+        chart = f_chart.result()
+        news = f_news.result()
 
     price = _num(basic.get("closePrice"))
     if price is None:
@@ -105,6 +115,6 @@ def get_stock_detail(symbol: str, name: str, up: str, down: str, flat: str) -> d
         "per": stats.get("per", "—"),
         "pbr": stats.get("pbr", "—"),
         "foreignRate": stats.get("foreignRate", "—"),
-        "chart": chart_range.get_chart("stock", symbol, "1D"),
-        "news": _fetch_news(code),
+        "chart": chart,
+        "news": news,
     }

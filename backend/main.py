@@ -18,6 +18,7 @@ import indicator_detail
 import naver_search
 import seibro_custody
 import stock_detail
+import ttl_cache
 import us_stock_detail
 from market_data import MarketData
 
@@ -159,6 +160,9 @@ async def startup() -> None:
         asyncio.to_thread(market.poll_kr_rates),
     )
     await asyncio.to_thread(market.poll_prices)
+    # Warm the stock-name index (substring search) in the background —
+    # not worth delaying first paint for.
+    naver_search.refresh_index()
     asyncio.create_task(_price_loop())
     asyncio.create_task(_movers_loop())
     asyncio.create_task(_kr_most_traded_loop())
@@ -184,9 +188,24 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         manager.disconnect(websocket)
 
 
+# Popup payloads aggregate several slow upstream calls; a short TTL
+# makes reopening the same popup (or re-typing a search) instant while
+# staying well inside the board's own 10s price-poll cadence.
+DETAIL_CACHE_TTL = 30
+CHART_CACHE_TTL = 60
+SEARCH_CACHE_TTL = 300
+
+
 @app.get("/api/search")
 async def search(q: str = "") -> list[dict]:
-    return await asyncio.to_thread(naver_search.search_stocks, q)
+    # Empty results aren't cached (get_or_fetch skips None) — the name
+    # index may still be warming up right after startup, and a cached
+    # miss would pin "no results" for the whole TTL.
+    res = await asyncio.to_thread(
+        ttl_cache.get_or_fetch, f"search:{q}", SEARCH_CACHE_TTL,
+        lambda: naver_search.search_stocks(q) or None,
+    )
+    return res or []
 
 
 @app.get("/api/stock/{symbol}")
@@ -197,7 +216,10 @@ async def stock_detail_endpoint(symbol: str, name: str = "", scheme: str = "kr")
     # (네이버 for KR, Yahoo Finance for US) rather than guessing at one API.
     is_kr = symbol.endswith(".KS") or symbol.endswith(".KQ")
     fetch = stock_detail.get_stock_detail if is_kr else us_stock_detail.get_stock_detail
-    detail = await asyncio.to_thread(fetch, symbol, name, up, down, flat)
+    detail = await asyncio.to_thread(
+        ttl_cache.get_or_fetch, f"stock:{symbol}:{scheme}", DETAIL_CACHE_TTL,
+        lambda: fetch(symbol, name, up, down, flat),
+    )
     if detail is None:
         raise HTTPException(404, f"no data for {symbol}")
     return detail
@@ -209,17 +231,20 @@ async def indicator_endpoint(
 ) -> dict:
     up, down, flat = _colors_for(scheme)
     if kind == "fx":
-        detail = await asyncio.to_thread(indicator_detail.get_fx_detail, symbol, pair, name, up, down, flat)
+        fetch = lambda: indicator_detail.get_fx_detail(symbol, pair, name, up, down, flat)
     elif kind == "index":
-        detail = await asyncio.to_thread(indicator_detail.get_index_detail, symbol, name, up, down, flat)
+        fetch = lambda: indicator_detail.get_index_detail(symbol, name, up, down, flat)
     elif kind == "commodity":
-        detail = await asyncio.to_thread(indicator_detail.get_commodity_detail, symbol, name, contract, up, down, flat)
+        fetch = lambda: indicator_detail.get_commodity_detail(symbol, name, contract, up, down, flat)
     elif kind == "rate":
-        detail = await asyncio.to_thread(indicator_detail.get_rate_detail, symbol, name, sub, up, down, flat)
+        fetch = lambda: indicator_detail.get_rate_detail(symbol, name, sub, up, down, flat)
     elif kind == "krrate":
-        detail = await asyncio.to_thread(indicator_detail.get_krrate_detail, symbol, name, up, down, flat)
+        fetch = lambda: indicator_detail.get_krrate_detail(symbol, name, up, down, flat)
     else:
         raise HTTPException(400, f"unknown indicator kind: {kind}")
+    detail = await asyncio.to_thread(
+        ttl_cache.get_or_fetch, f"indicator:{kind}:{symbol}:{scheme}", DETAIL_CACHE_TTL, fetch,
+    )
     if detail is None:
         raise HTTPException(404, f"no data for {kind}/{symbol}")
     return detail
@@ -229,7 +254,10 @@ async def indicator_endpoint(
 async def chart_endpoint(kind: str, symbol: str, range: str = "1D") -> dict:
     if range not in chart_range.RANGES:
         raise HTTPException(400, f"unknown range: {range}")
-    chart = await asyncio.to_thread(chart_range.get_chart, kind, symbol, range)
+    chart = await asyncio.to_thread(
+        ttl_cache.get_or_fetch, f"chart:{kind}:{symbol}:{range}", CHART_CACHE_TTL,
+        lambda: chart_range.get_chart(kind, symbol, range),
+    )
     if chart is None:
         raise HTTPException(404, f"no chart for {kind}/{symbol} ({range})")
     return chart

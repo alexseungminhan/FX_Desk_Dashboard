@@ -368,6 +368,11 @@
       || it.symbol.toLowerCase().includes(needle)
     ).slice(0, 6);
 
+    // 지표 결과는 로컬 매칭이라 즉시 보여주고, 종목 결과는 도착하는
+    // 대로 아래에 덧붙인다 — 네이버 응답을 기다렸다 한꺼번에 그리면
+    // 체감이 느리다.
+    if (indMatches.length) gsRender(indMatches, []);
+
     let stockMatches = [];
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
@@ -387,7 +392,7 @@
     clearTimeout(gsDebounce);
     const q = gsInput.value.trim();
     if (!q) { gsHide(); return; }
-    gsDebounce = setTimeout(() => gsSearch(q), 250);
+    gsDebounce = setTimeout(() => gsSearch(q), 150);
   });
 
   gsInput.addEventListener("keydown", (ev) => {
