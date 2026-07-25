@@ -530,6 +530,168 @@
   tickClock();
   setInterval(tickClock, 1000);
 
+  // -- SEIBro 미국 주식 보관금액 (월별) ----------------------------------
+
+  // USD 금액을 "1,493억 달러" 형태로. (억 = 1e8)
+  function fmtCustody(v) {
+    const eok = v / 1e8;
+    return eok.toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "억 달러";
+  }
+  function fmtUsdShort(v) {
+    return "$" + (v / 1e9).toFixed(1) + "B";
+  }
+  function fmtPct(p) {
+    return (p >= 0 ? "+" : "") + p.toFixed(1) + "%";
+  }
+  function pctColor(p) {
+    return p > 0 ? "var(--color-accent)" : p < 0 ? "#c0392b" : "#7a7a7d";
+  }
+
+  function statTile(label, value, sub, subColor) {
+    return `<div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:10px;letter-spacing:.06em;color:#7a7a7d;text-transform:uppercase">${esc(label)}</span>
+      <span class="mono" style="font-size:19px;font-weight:600;line-height:1.1">${esc(value)}</span>
+      ${sub ? `<span class="mono" style="font-size:11.5px;color:${subColor || "#7a7a7d"}">${esc(sub)}</span>` : ""}
+    </div>`;
+  }
+
+  // CSS 변수는 SVG 프레젠테이션 속성(fill/stroke)에 적용되지 않으므로 실제 색으로 변환.
+  function cssVar(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
+
+  function custodyChartSvg(points, w = 1000, h = 240) {
+    const padL = 34, padR = 34, padT = 34, padB = 30;
+    const accent = cssVar("--color-accent", "#5980a6");
+    const divider = cssVar("--color-divider", "#d7d7d9");
+    const bg = "#f2f2f3";
+    const amts = points.map((p) => p.amount);
+    const lo = Math.min(...amts), hi = Math.max(...amts);
+    const rng = (hi - lo) || 1;
+    const iw = w - padL - padR, ih = h - padT - padB;
+    const n = points.length;
+    const xs = (i) => padL + (n === 1 ? iw / 2 : (i / (n - 1)) * iw);
+    const ys = (v) => padT + ih - ((v - lo) / rng) * ih;
+
+    const coords = points.map((p, i) => [xs(i), ys(p.amount)]);
+    const line = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
+    const area = `${line} L ${(padL + iw).toFixed(1)} ${(padT + ih).toFixed(1)} L ${padL.toFixed(1)} ${(padT + ih).toFixed(1)} Z`;
+
+    // 가로 기준선 (min/max)
+    const grid = [padT, padT + ih].map(
+      (y) => `<line x1="${padL}" y1="${y}" x2="${padL + iw}" y2="${y}" stroke="${divider}" stroke-width="1"/>`
+    ).join("");
+
+    // 데이터 포인트 (기본은 빈 점)
+    const dots = coords.map(([x, y]) =>
+      `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="${bg}" stroke="${accent}" stroke-width="1.4"/>`
+    ).join("");
+
+    // x축 월 라벨 (YY.MM)
+    const labels = points.map((p, i) => {
+      const [yy, mm] = p.month.split("-");
+      return `<text x="${coords[i][0].toFixed(1)}" y="${(h - 8).toFixed(1)}" text-anchor="middle" font-size="10" fill="#98989b" font-family="monospace">${yy.slice(2)}.${mm}</text>`;
+    }).join("");
+
+    // 마우스 감지용 세로 밴드 (점 사이 전 구간을 커버) — hover 시 값 표시
+    const hit = coords.map(([x, y], i) => {
+      const left = i === 0 ? 0 : (coords[i - 1][0] + x) / 2;
+      const right = i === n - 1 ? w : (coords[i + 1][0] + x) / 2;
+      return `<rect class="custody-hit" x="${left.toFixed(1)}" y="0" width="${(right - left).toFixed(1)}" height="${h}" fill="transparent"
+        data-x="${x.toFixed(1)}" data-y="${y.toFixed(1)}" data-amount="${points[i].amount}" data-month="${points[i].month}"/>`;
+    }).join("");
+
+    // hover 표시 그룹 (JS로 위치·텍스트 갱신)
+    const hover = `<g class="custody-hover" style="display:none" pointer-events="none">
+      <circle class="hv-dot" r="4.5" fill="${accent}" stroke="${bg}" stroke-width="1.6"/>
+      <text class="hv-val" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700" fill="${accent}"
+        style="paint-order:stroke;stroke:${bg};stroke-width:3.5px;stroke-linejoin:round"></text>
+      <text class="hv-month" text-anchor="middle" font-family="monospace" font-size="10" fill="#7a7a7d"
+        style="paint-order:stroke;stroke:${bg};stroke-width:3px;stroke-linejoin:round"></text>
+    </g>`;
+
+    return `<svg viewBox="0 0 ${w} ${h}" style="display:block;width:100%;height:auto">
+      ${grid}
+      <path d="${area}" fill="${accent}" fill-opacity="0.10"></path>
+      <path d="${line}" fill="none" stroke="${accent}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></path>
+      ${dots}
+      ${labels}
+      ${hover}
+      ${hit}
+    </svg>`;
+  }
+
+  // 차트 삽입 후 hover 상호작용 연결.
+  function wireCustodyHover(chartEl, w = 1000) {
+    const svg = chartEl.querySelector("svg");
+    if (!svg) return;
+    const hover = svg.querySelector(".custody-hover");
+    const dot = svg.querySelector(".hv-dot");
+    const val = svg.querySelector(".hv-val");
+    const mon = svg.querySelector(".hv-month");
+
+    svg.querySelectorAll(".custody-hit").forEach((band) => {
+      const show = () => {
+        const x = parseFloat(band.dataset.x);
+        const y = parseFloat(band.dataset.y);
+        const amount = parseFloat(band.dataset.amount);
+        const tx = Math.max(46, Math.min(w - 46, x));   // 라벨 좌우 잘림 방지
+        const ty = Math.max(16, y - 16);
+        dot.setAttribute("cx", x);
+        dot.setAttribute("cy", y);
+        val.setAttribute("x", tx);
+        val.setAttribute("y", ty);
+        val.textContent = fmtCustody(amount);
+        mon.setAttribute("x", tx);
+        mon.setAttribute("y", ty - 12);
+        mon.textContent = band.dataset.month;
+        hover.style.display = "";
+      };
+      band.addEventListener("mouseenter", show);
+      band.addEventListener("mousemove", show);
+      band.addEventListener("mouseleave", () => { hover.style.display = "none"; });
+    });
+  }
+
+  function renderCustody(d) {
+    const empty = $("custody-empty"), chart = $("custody-chart"), stats = $("custody-stats");
+    if (!d || !d.points || d.points.length === 0 || !d.stats) {
+      chart.innerHTML = "";
+      stats.innerHTML = "";
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+    $("custody-source").textContent = d.source || "";
+
+    const s = d.stats;
+    const latestMonth = s.latest.month;
+    const firstMonth = d.points[0].month;
+    stats.innerHTML = [
+      statTile(`최신 (${latestMonth})`, fmtCustody(s.latest.amount), fmtUsdShort(s.latest.amount)),
+      statTile("전월 대비", fmtPct(s.changePct), `${s.change >= 0 ? "+" : ""}${fmtCustody(Math.abs(s.change)).replace("억 달러", "")}억`, pctColor(s.changePct)),
+      statTile(`1년 증감 (${firstMonth}→)`, fmtPct(s.yoyPct), fmtUsdShort(Math.abs(s.yoyChange)), pctColor(s.yoyPct)),
+      statTile("최고 / 최저", `${fmtUsdShort(s.max.amount)} / ${fmtUsdShort(s.min.amount)}`, `${s.max.month} / ${s.min.month}`),
+    ].join("");
+
+    chart.innerHTML = custodyChartSvg(d.points);
+    wireCustodyHover(chart);
+  }
+
+  async function loadCustody() {
+    try {
+      const r = await fetch("/api/seibro-custody");
+      if (!r.ok) throw new Error(r.status);
+      renderCustody(await r.json());
+    } catch (e) {
+      console.error("custody load failed", e);
+      renderCustody(null);
+    }
+  }
+  loadCustody();
+  setInterval(loadCustody, 30 * 60 * 1000); // 월별 데이터 — 30분마다 재확인
+
   // -- WebSocket with reconnect -----------------------------------------
 
   let backoff = 1000;

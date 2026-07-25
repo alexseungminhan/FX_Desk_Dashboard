@@ -145,6 +145,17 @@
     <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+            <h4 style="margin:0">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
+            <span id="custody-source" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <div id="custody-stats" style="display:flex;flex-wrap:wrap;gap:0 34px;margin-bottom:12px"></div>
+          <div id="custody-chart"></div>
+          <div id="custody-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
+        </div>
+
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
             <span id="news-count" class="mono" style="font-size:11px;color:#98989b"></span>

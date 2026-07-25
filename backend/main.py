@@ -15,6 +15,7 @@ from fastapi.responses import FileResponse
 
 import indicator_detail
 import naver_search
+import seibro_custody
 import stock_detail
 import us_stock_detail
 from market_data import MarketData
@@ -222,6 +223,11 @@ async def indicator_endpoint(
     if detail is None:
         raise HTTPException(404, f"no data for {kind}/{symbol}")
     return detail
+
+
+@app.get("/api/seibro-custody")
+async def seibro_custody_endpoint() -> dict:
+    return await asyncio.to_thread(seibro_custody.build)
 
 
 @app.get("/")
