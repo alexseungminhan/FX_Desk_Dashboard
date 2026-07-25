@@ -16,6 +16,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+import multitasking
 import pandas as pd
 import yfinance as yf
 
@@ -329,6 +330,15 @@ class MarketData:
                 st.stale = True
 
         self.last_snapshot_at = datetime.now(tz=KST)
+        # yfinance's threaded download appends one worker Thread per
+        # symbol to multitasking's global TASKS list and never removes
+        # them — ~40 dead Thread objects per poll, which compounds to
+        # ~GB/day of RSS on this 10s loop. Pruning is safe: yf.download
+        # awaits completion via shared._DFS, not this list. Doing it
+        # here also covers the other, slower yf.download callers.
+        multitasking.config["TASKS"] = [
+            t for t in multitasking.config["TASKS"] if t.is_alive()
+        ]
         # This loop runs every 10s forever — reclaim pandas' reference
         # cycles right away instead of letting them pile up between
         # generational GC passes.
