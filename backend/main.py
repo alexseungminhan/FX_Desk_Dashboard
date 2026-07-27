@@ -33,7 +33,6 @@ KR_RATES_POLL_SECONDS = 600
 MOVERS_POLL_SECONDS = 60
 KR_MOST_TRADED_POLL_SECONDS = 60
 US_MOVERS_POLL_SECONDS = 90
-PREV_CLOSE_REFRESH_SECONDS = 6 * 60 * 60
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -137,23 +136,14 @@ async def _kr_rates_loop() -> None:
         await asyncio.sleep(KR_RATES_POLL_SECONDS)
 
 
-async def _prev_close_loop() -> None:
-    while True:
-        try:
-            await asyncio.to_thread(market.refresh_prev_close)
-        except Exception:
-            log.exception("prev-close refresh failed")
-        await asyncio.sleep(PREV_CLOSE_REFRESH_SECONDS)
-
-
 @app.on_event("startup")
 async def startup() -> None:
     # Seed everything before serving so the very first page load already
     # has real numbers instead of blanks. Sources are independent, so
-    # they run concurrently — only poll_prices needs prev-close first
-    # (for the % baseline), so it runs after that gather.
+    # they all run concurrently — poll_prices reads its own % baseline
+    # out of the same window as the price, so nothing has to precede it.
     await asyncio.gather(
-        asyncio.to_thread(market.refresh_prev_close),
+        asyncio.to_thread(market.poll_prices),
         asyncio.to_thread(market.poll_movers),
         asyncio.to_thread(market.poll_kr_most_traded),
         asyncio.to_thread(market.poll_us_movers),
@@ -161,7 +151,6 @@ async def startup() -> None:
         asyncio.to_thread(market.poll_fx_news),
         asyncio.to_thread(market.poll_kr_rates),
     )
-    await asyncio.to_thread(market.poll_prices)
     # Warm the stock-name index (substring search) in the background —
     # not worth delaying first paint for.
     naver_search.refresh_index()
@@ -171,7 +160,6 @@ async def startup() -> None:
     asyncio.create_task(_us_movers_loop())
     asyncio.create_task(_news_loop())
     asyncio.create_task(_kr_rates_loop())
-    asyncio.create_task(_prev_close_loop())
 
 
 @app.websocket("/ws")

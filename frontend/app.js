@@ -24,6 +24,12 @@
     return row.stale ? ' title="마지막 성공한 값 (일시적 갱신 실패)"' : "";
   }
 
+  // ETF·ETN도 개별종목과 같은 랭킹에 섞여 들어오므로(네이버 증권 ·
+  // 야후 파이낸스 원본과 동일) 이름 옆에 종류를 붙여 구분한다.
+  function kindTag(row) {
+    return row.kind ? `<span class="mv-tag">${esc(row.kind)}</span>` : "";
+  }
+
   // -- panel renderers ---------------------------------------------------
 
   function renderTicker(rows) {
@@ -83,7 +89,7 @@
     $("movers-list").innerHTML = rows.map((m) => `
       <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
-        <span class="mv-name">${esc(m.name)}</span>
+        <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
       </div>`).join("");
@@ -94,8 +100,9 @@
     $("kr-most-traded-list").innerHTML = latest.krMostTraded.map((m) => `
       <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
-        <span class="mv-name">${esc(m.name)}</span>
+        <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
+        <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
         <span class="mono mt-vol">${esc(m.tradingValue)}</span>
       </div>`).join("");
   }
@@ -106,7 +113,7 @@
     $("us-movers-list").innerHTML = rows.map((m) => `
       <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
-        <span class="mv-name">${esc(m.name)}</span>
+        <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
       </div>`).join("");
@@ -117,8 +124,9 @@
     $("us-most-active-list").innerHTML = latest.usMostActive.map((m) => `
       <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
-        <span class="mv-name">${esc(m.name)}</span>
+        <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
+        <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
         <span class="mono mt-vol">${esc(m.volume)}</span>
       </div>`).join("");
   }

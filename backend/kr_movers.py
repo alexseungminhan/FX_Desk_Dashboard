@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -29,18 +31,65 @@ _HEADERS = {
 _RISE_URL = "https://finance.naver.com/sise/sise_rise.naver?sosok={sosok}"
 _FALL_URL = "https://finance.naver.com/sise/sise_fall.naver?sosok={sosok}"
 
-# Naver's ranking pages mix in leveraged/inverse ETNs and ETFs (they
-# trade like stocks and do hit these ranking pages); exclude them so
-# "국내 등락 상위" reads as actual equities, matching what most users
-# mean by the phrase.
-_EXCLUDE_SUBSTRINGS = (
-    "ETN", "ETF", "KODEX", "TIGER", "레버리지", "인버스", "선물",
-    "HANARO", "KBSTAR", "ACE ", "KOSEF", "SOL ", "RISE ", "PLUS ",
-    "KINDEX", "ARIRANG", "TIMEFOLIO", "히어로즈", "마이티",
-)
-
 _MARKET_SUFFIX = {"KOSPI": ".KS", "KOSDAQ": ".KQ"}
 _CODE_RE = re.compile(r"code=(\d{6})")
+
+# ---------------------------------------------------------------------------
+# ETF / ETN classification
+#
+# Naver's ranking pages list ETFs and ETNs inline with ordinary equities
+# (they trade like stocks and genuinely do top these tables — 거래대금
+# 상위 on 네이버 증권 is roughly half ETFs on a typical day), so the
+# rankings here carry them too and the board just labels which is which.
+#
+# ETFs are identified against Naver's own ETF universe endpoint rather
+# than by name pattern — brand prefixes (KODEX/TIGER/ACE/RISE/…) change
+# as issuers rebrand and would silently mislabel rows. ETNs are not in
+# that list; they carry "ETN" in the product name by KRX naming rule.
+# ---------------------------------------------------------------------------
+
+_ETF_LIST_URL = "https://finance.naver.com/api/sise/etfItemList.nhn"
+_ETF_CODES_TTL = 6 * 60 * 60  # issuer listings change at most daily
+
+_etf_lock = threading.Lock()
+_etf_codes: frozenset[str] = frozenset()
+_etf_fetched_at: float = 0.0
+
+
+def _fetch_etf_codes() -> frozenset[str]:
+    r = requests.get(_ETF_LIST_URL, headers=_HEADERS, timeout=8)
+    r.raise_for_status()
+    items = r.json()["result"]["etfItemList"]
+    return frozenset(str(i["itemcode"]) for i in items if i.get("itemcode"))
+
+
+def etf_codes() -> frozenset[str]:
+    """Cached set of every KRX ETF ticker code, from Naver's own ETF
+    universe endpoint. On failure the last known set is kept (empty on a
+    cold start), so a hiccup downgrades labelling — it never drops rows."""
+    global _etf_codes, _etf_fetched_at
+    with _etf_lock:
+        fresh = time.time() - _etf_fetched_at < _ETF_CODES_TTL
+        if fresh and _etf_codes:
+            return _etf_codes
+    try:
+        codes = _fetch_etf_codes()
+    except Exception:
+        log.exception("naver ETF list fetch failed — keeping last known codes")
+        return _etf_codes
+    with _etf_lock:
+        _etf_codes = codes
+        _etf_fetched_at = time.time()
+        return _etf_codes
+
+
+def _kind_for(code: str, name: str, etfs: frozenset[str]) -> str:
+    """"ETF" | "ETN" | "" (ordinary equity)."""
+    if code in etfs:
+        return "ETF"
+    if "ETN" in name:
+        return "ETN"
+    return ""
 
 
 def _fetch_rows(url: str, market: str, limit: int) -> list[dict]:
@@ -52,14 +101,13 @@ def _fetch_rows(url: str, market: str, limit: int) -> list[dict]:
     if table is None:
         return []
 
+    etfs = etf_codes()
     out = []
     for tr in table.select("tr"):
         link = tr.select_one("a.tltle")
         if not link:
             continue
         name = link.get_text(strip=True)
-        if any(s in name for s in _EXCLUDE_SUBSTRINGS):
-            continue
         m = _CODE_RE.search(link.get("href", ""))
         if not m:
             continue
@@ -72,12 +120,14 @@ def _fetch_rows(url: str, market: str, limit: int) -> list[dict]:
             pct = float(tds[4].replace("%", ""))
         except ValueError:
             continue
+        code = m.group(1)
         out.append({
             "name": name,
-            "symbol": m.group(1) + _MARKET_SUFFIX[market],
+            "symbol": code + _MARKET_SUFFIX[market],
             "price": price,
             "pct": pct,
             "market": market,
+            "kind": _kind_for(code, name, etfs),
         })
         if len(out) >= limit:
             break
@@ -126,14 +176,13 @@ def _fetch_quant_rows(sosok: int, market: str, limit: int) -> list[dict]:
     if table is None:
         return []
 
+    etfs = etf_codes()
     out = []
     for tr in table.select("tr"):
         link = tr.select_one("a.tltle")
         if not link:
             continue
         name = link.get_text(strip=True)
-        if any(s in name for s in _EXCLUDE_SUBSTRINGS):
-            continue
         m = _CODE_RE.search(link.get("href", ""))
         if not m:
             continue
@@ -143,15 +192,19 @@ def _fetch_quant_rows(sosok: int, market: str, limit: int) -> list[dict]:
             continue
         try:
             price = float(tds[2].replace(",", ""))
+            pct = float(tds[4].replace("%", ""))
             trading_value_mm = float(tds[6].replace(",", ""))  # 백만원 단위
         except ValueError:
             continue
+        code = m.group(1)
         out.append({
             "name": name,
-            "symbol": m.group(1) + _MARKET_SUFFIX[market],
+            "symbol": code + _MARKET_SUFFIX[market],
             "price": price,
+            "pct": pct,
             "tradingValueMm": trading_value_mm,
             "market": market,
+            "kind": _kind_for(code, name, etfs),
         })
         if len(out) >= limit:
             break

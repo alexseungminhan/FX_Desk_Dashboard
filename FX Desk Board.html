@@ -16,8 +16,10 @@
   .mv-name{font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .mv-px{font-size:12px;text-align:right;color:#5d5d60}
   .mv-pct{font-size:12px;text-align:right;min-width:56px}
-  .mt-row{display:grid;grid-template-columns:18px 1fr auto auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .mt-row{display:grid;grid-template-columns:18px 1fr auto auto auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .mt-vol{font-size:12px;text-align:right;min-width:64px;color:#1d1f20;font-weight:500}
+  /* ETF·ETN은 개별종목과 나란히 랭킹되므로 이름 옆에 종류를 표시한다 */
+  .mv-tag{font-size:9.5px;font-weight:600;letter-spacing:.04em;color:#7a7a7d;border:1px solid rgba(29,31,32,.18);padding:0 3px;margin-left:5px;vertical-align:1px}
   .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
   .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 8px;border:1px solid var(--color-accent);color:var(--color-accent);background:rgba(89,128,166,.08);letter-spacing:.02em}
   .kw-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0}
@@ -148,7 +150,7 @@
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · S&amp;P 500 + NASDAQ</span></h4>
+            <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
             <div class="seg" style="height:28px">
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span>상승</span></label>
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-losers"><span>하락</span></label>
@@ -158,7 +160,7 @@
         </div>
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순</span></h4>
+          <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
           <div id="us-most-active-list"></div>
         </div>
     </div>

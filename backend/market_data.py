@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 import multitasking
-import pandas as pd
 import yfinance as yf
+from yfinance.data import YfData
 
 import fx_news
 import kr_movers
@@ -139,6 +139,30 @@ FIXED_SYMBOLS = sorted({
 
 SPARK_LEN = 30
 
+# Yahoo's batched quote endpoint: price and previous close for every
+# tracked symbol in a single request. This is the same data the popups
+# read per-symbol via Ticker.get_info(), so the board and the popup you
+# open from it cannot disagree — they now resolve to one source.
+#
+# It replaced daily OHLC bars as the price source because Yahoo's daily
+# Close is simply wrong outside indices and rates. For FX and futures it
+# reports something near the session's OPEN: USDKRW=X's 07-24 bar closed
+# at 1474.04 while that day's last actual tick was 1459.42, which put
+# every FX % on the board a session out of step and flipped signs
+# outright (ZC=F read +1.83% against a real -3.08%). On indices and
+# rates, where the bars are trustworthy, the two agree to the cent.
+QUOTE_URL = "https://query2.finance.yahoo.com/v7/finance/quote"
+# Long symbol lists get truncated rather than rejected, so they're sent
+# in chunks; the board's ~40 symbols normally fit in one request.
+QUOTE_CHUNK = 40
+
+# Fallback-path guard only (see _fetch_from_bars). Yahoo's daily history
+# also drops whole runs of sessions — a recent ^KS200 window held 07-16
+# and 07-27 and nothing between — and the bar before the last one is the
+# previous session only if it's actually adjacent. Generous enough to
+# clear a weekend plus a 설/추석 closure, which are real adjacency.
+MAX_BASELINE_GAP_DAYS = 7
+
 
 def _fmt_num(v: float, decimals: int) -> str:
     return f"{v:,.{decimals}f}"
@@ -169,6 +193,26 @@ def _fmt_krw_value(million_won: float) -> str:
     if jo >= 1:
         return f"{jo:,.2f}조"
     return f"{eok:,.0f}억"
+
+
+def _usable_price(v) -> float | None:
+    """Yahoo hands back NaN (and occasionally 0) for "no value". NaN is
+    truthy and propagates silently through every %, so quote fields get
+    filtered here rather than trusted."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f != 0 else None
+
+
+def _bars_adjacent(prev_ts, last_ts) -> bool:
+    """Are these two daily bars consecutive sessions, or is there a hole
+    in the series between them? See MAX_BASELINE_GAP_DAYS."""
+    try:
+        return abs((last_ts - prev_ts).days) <= MAX_BASELINE_GAP_DAYS
+    except Exception:
+        return True  # unparseable index — trust the bars rather than blank the row
 
 
 def _decimals_for(symbol: str, price: float) -> int:
@@ -253,96 +297,114 @@ class MarketData:
 
     # -- data acquisition ---------------------------------------------
 
-    def refresh_prev_close(self) -> None:
-        """Fetch yesterday's close for every symbol (cheap, once/day)."""
-        symbols = self.all_symbols()
-        try:
-            data = yf.download(
-                tickers=" ".join(symbols),
-                period="5d",
-                interval="1d",
-                group_by="ticker",
-                progress=False,
-                threads=True,
-            )
-        except Exception:
-            log.exception("refresh_prev_close failed")
-            return
+    def _fetch_quotes(self, symbols: list[str]) -> dict[str, tuple[float, float | None]]:
+        """symbol -> (price, prev_close) from Yahoo's batched quote
+        endpoint. Raises if the request fails, so the caller can fall
+        back rather than silently reporting an empty market."""
+        out: dict[str, tuple[float, float | None]] = {}
+        for i in range(0, len(symbols), QUOTE_CHUNK):
+            chunk = symbols[i:i + QUOTE_CHUNK]
+            # Through YfData so the request carries yfinance's own
+            # cookie/crumb auth, which this endpoint requires.
+            resp = YfData().get(url=QUOTE_URL, params={"symbols": ",".join(chunk)})
+            resp.raise_for_status()
+            for q in resp.json()["quoteResponse"]["result"]:
+                sym = q.get("symbol")
+                price = _usable_price(q.get("regularMarketPrice"))
+                if sym and price is not None:
+                    out[sym] = (price, _usable_price(q.get("regularMarketPreviousClose")))
+        return out
+
+    def _fetch_from_bars(self, symbols: list[str]) -> dict[str, tuple[float, float | None]]:
+        """Same shape as _fetch_quotes, from daily OHLC bars. Only a
+        fallback for when the quote endpoint is unreachable: these bars
+        carry the wrong Close for FX and futures (see QUOTE_URL), so the
+        board runs degraded on this path rather than blank."""
+        data = yf.download(
+            tickers=" ".join(symbols),
+            period="7d",
+            interval="1d",
+            group_by="ticker",
+            progress=False,
+            threads=True,
+        )
+        out: dict[str, tuple[float, float | None]] = {}
+        single = len(symbols) == 1
         for sym in symbols:
             try:
-                closes = data[sym]["Close"].dropna()
-                if len(closes) >= 2:
-                    self.states[sym].prev_close = float(closes.iloc[-2])
-                elif len(closes) == 1:
-                    self.states[sym].prev_close = float(closes.iloc[-1])
+                closes = (data["Close"] if single else data[sym]["Close"]).dropna()
+                if len(closes) == 0:
+                    continue
+                prev = None
+                if len(closes) >= 2 and _bars_adjacent(closes.index[-2], closes.index[-1]):
+                    prev = float(closes.iloc[-2])
+                out[sym] = (float(closes.iloc[-1]), prev)
             except Exception:
                 continue
+        return out
 
     def poll_prices(self) -> None:
-        """Batch-fetch the current price for every tracked symbol.
+        """Refresh the price AND its % baseline for every tracked symbol
+        from one batched quote request.
 
-        Daily bars, not intraday ones: Yahoo updates today's daily bar
-        live during the session, so its Close IS the current price, and
-        on weekends/holidays the window still resolves to the last real
-        session's close. Two rows per symbol instead of a week of 5m
-        bars also keeps this 10s loop from churning hundreds of MB of
-        throwaway DataFrames — that churn showed up as a linear RSS
-        climb (→ OOM restarts) on small hosts.
+        Both numbers come out of the same response, so the price and the
+        % printed next to it can never be a session out of step — that
+        pairing is the whole point. It used to break two ways: the
+        baseline was refreshed on a separate 6-hour loop (so an
+        overnight refresh, taken before the new KRX bar existed, left
+        every morning % measured against D-2), and the daily bars it
+        read report roughly the session's OPEN as the Close on FX and
+        futures. Reading both from the quote endpoint fixes both, and
+        also makes the board agree with the popups, which read the same
+        fields per symbol.
         """
         symbols = self.all_symbols()
         try:
-            data = yf.download(
-                tickers=" ".join(symbols),
-                period="2d",
-                interval="1d",
-                group_by="ticker",
-                progress=False,
-                threads=True,
-            )
+            quotes = self._fetch_quotes(symbols)
         except Exception:
-            log.exception("poll_prices failed — keeping last known values")
-            return
+            log.exception("quote fetch failed — falling back to daily bars")
+            quotes = {}
+        if not quotes:
+            try:
+                quotes = self._fetch_from_bars(symbols)
+            except Exception:
+                log.exception("poll_prices failed — keeping last known values")
+                return
 
         now = time.time()
-        single = len(symbols) == 1
-        for sym in symbols:
-            st = self.states[sym]
-            try:
-                closes = data["Close"] if single else data[sym]["Close"]
-                closes = closes.dropna()
-                if len(closes) == 0:
-                    continue
-                price = float(closes.iloc[-1])
-                if st.prev_close is None:
-                    st.prev_close = float(closes.iloc[0])
-                st.price = price
-                st.history.append(price)
-                st.stale = False
-                st.last_ok = now
-            except Exception:
-                # Leave st.price/prev_close untouched — frontend keeps
-                # showing the last real value with a stale indicator.
+        for sym, (price, prev) in quotes.items():
+            st = self.states.get(sym)
+            if st is None:
                 continue
+            st.price = price
+            # A missing baseline leaves the last known one in place — the
+            # row keeps a real (if slightly old) %, and the next poll
+            # corrects it. Never fabricated from the price itself, which
+            # is what used to pin USD/CNH at a permanent +0.00%.
+            if prev is not None:
+                st.prev_close = prev
+            st.history.append(price)
+            st.stale = False
+            st.last_ok = now
 
-        # Anything not refreshed in the last 90s is flagged stale.
+        # Anything not refreshed in the last 90s is flagged stale. Rows
+        # missing from the response keep their last real value.
         for st in self.states.values():
             if now - st.last_ok > 90:
                 st.stale = True
 
         self.last_snapshot_at = datetime.now(tz=KST)
+        # This poll no longer builds DataFrames itself, but the popup and
+        # chart endpoints still call yf.download on user interaction, and
         # yfinance's threaded download appends one worker Thread per
-        # symbol to multitasking's global TASKS list and never removes
-        # them — ~40 dead Thread objects per poll, which compounds to
-        # ~GB/day of RSS on this 10s loop. Pruning is safe: yf.download
-        # awaits completion via shared._DFS, not this list. Doing it
-        # here also covers the other, slower yf.download callers.
+        # symbol to multitasking's global TASKS list without ever
+        # removing them — left alone that compounded into ~GB/day of RSS
+        # (→ OOM restarts) on small hosts. This 10s loop is the natural
+        # place to keep sweeping it. Pruning is safe: yf.download awaits
+        # completion via shared._DFS, not this list.
         multitasking.config["TASKS"] = [
             t for t in multitasking.config["TASKS"] if t.is_alive()
         ]
-        # This loop runs every 10s forever — reclaim pandas' reference
-        # cycles right away instead of letting them pile up between
-        # generational GC passes.
-        del data
         gc.collect()
 
     def poll_news(self) -> None:
@@ -536,6 +598,7 @@ class MarketData:
                 "symbol": m.get("symbol"),
                 "name": name,
                 "market": m.get("market"),
+                "kind": m.get("kind", ""),  # "ETF" | "ETN" | "" (개별종목)
                 "price": _fmt_num(m["price"], 0),
                 "pct": f"{pct:+.2f}%",
                 "color": color,
@@ -547,12 +610,17 @@ class MarketData:
         losers = [mover_row(m, i) for i, m in enumerate(self.mover_losers)]
 
         def kr_most_traded_row(m: dict, i: int) -> dict:
+            pct = m["pct"]
             return {
                 "rank": i + 1,
                 "symbol": m.get("symbol"),
                 "name": m["name"] + ("*" if m.get("market") == "KOSDAQ" else ""),
                 "market": m.get("market"),
+                "kind": m.get("kind", ""),
                 "price": _fmt_num(m["price"], 0),
+                "pct": f"{pct:+.2f}%",
+                "color": up if pct > 0 else down if pct < 0 else flat,
+                "arrow": "▲" if pct > 0 else "▼" if pct < 0 else "–",
                 "tradingValue": _fmt_krw_value(m["tradingValueMm"]),
                 "stale": self.kr_most_traded_stale,
             }
@@ -568,6 +636,7 @@ class MarketData:
                 "symbol": m["symbol"],
                 "name": m["symbol"],
                 "fullName": m.get("name") or m["symbol"],
+                "kind": m.get("kind", ""),  # "ETF" | "" (개별종목)
                 "price": _fmt_usd(m["price"]),
                 "pct": f"{pct:+.2f}%",
                 "color": color,
