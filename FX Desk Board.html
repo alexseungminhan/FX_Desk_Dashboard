@@ -54,6 +54,8 @@
   /* 막대 차트는 표보다 넉넉히 잡는다 — 11개 주체 라벨과 값이 겹치지 않고
      읽히는 하한이 이 정도다. 좁은 화면에서는 그만큼 옆으로 밀어서 본다. */
   #flow-chart,#bflow-chart{min-width:1000px}
+  /* 보관금액은 24개월치 월 라벨이 붙어 오히려 더 넓어야 안 겹친다 */
+  #custody-chart{min-width:1040px}
   #quotes-list{min-width:700px}
   #curve-table{min-width:900px}
   #curve-chart{min-width:860px}
@@ -334,7 +336,7 @@
             <span id="custody-source" class="mono" style="font-size:11px;color:#98989b"></span>
           </div>
           <div id="custody-stats" style="display:flex;flex-wrap:wrap;gap:0 34px;margin-bottom:12px"></div>
-          <div id="custody-chart"></div>
+          <div class="scroll-x"><div id="custody-chart"></div></div>
           <div id="custody-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
         </div>
 
