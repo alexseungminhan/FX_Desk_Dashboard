@@ -325,8 +325,8 @@
       return;
     }
 
-    const row = (label, value, color) =>
-      `<div class="bs-row"><span>${esc(label)}</span><span class="mono" ${color ? `style="color:${color}"` : ""}>${esc(value)}</span></div>`;
+    const stat = (label, value, color) =>
+      `<div class="bs-stat"><span>${esc(label)}</span><b class="mono"${color ? ` style="color:${color}"` : ""}>${esc(value)}</b></div>`;
 
     body.innerHTML = `
       <div class="bs-big">
@@ -334,12 +334,14 @@
         <span class="bs-tag" style="color:${b.basisColor}">${esc(b.state)}</span>
         <span style="font-size:11px;color:#98989b;margin-left:auto">베이시스 (선물−현물)</span>
       </div>
-      ${row("현물 KOSPI200", b.spot)}
-      ${row("선물 " + (b.contract ? `(${b.contract})` : ""), b.futures)}
-      ${row("이론가", b.theoretical)}
-      ${row("이론 베이시스", b.theoBasis)}
-      ${row("괴리율", `${b.spread} · ${b.valuation}`, b.spreadColor)}
-      ${row("만기까지", b.daysToExpiry != null ? `${b.daysToExpiry}일 (${b.expiry})` : "—")}`;
+      <div class="bs-stats">
+        ${stat("현물 KOSPI200", b.spot)}
+        ${stat(`선물 ${b.contract ? `(${b.contract})` : ""}`.trim(), b.futures)}
+        ${stat("이론가", b.theoretical)}
+        ${stat("이론 베이시스", b.theoBasis)}
+        ${stat("괴리율", `${b.spread} · ${b.valuation}`, b.spreadColor)}
+        ${stat("만기까지", b.daysToExpiry != null ? `${b.daysToExpiry}일 (${b.expiry})` : "—")}
+      </div>`;
 
     foot.textContent = `${b.stamp}\n${b.assumption}`;
   }
