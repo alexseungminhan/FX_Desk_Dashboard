@@ -20,6 +20,10 @@ import multitasking
 import yfinance as yf
 from yfinance.data import YfData
 
+import bond_curve
+import bond_flow
+import bond_quotes
+import fx_bond_issue
 import fx_news
 import keyword_news
 import kospi200_basis
@@ -27,6 +31,7 @@ import kr_investor_flow
 import kr_movers
 import kr_rates
 import naver_news
+import short_term_rates
 import us_movers
 import yahoo_news
 
@@ -352,6 +357,13 @@ class MarketData:
         self.keyword_news: dict = {}
         self.basis: dict | None = None
         self.basis_stale: bool = True
+        self.bond_curve: dict | None = None
+        self.bond_curve_stale: bool = True
+        self.fx_bond_issues: list[dict] = []
+        self.bond_flow: dict | None = None
+        self.bond_flow_stale: bool = True
+        self.bond_quotes: dict | None = None
+        self.short_term_rates: dict | None = None
 
     def all_symbols(self) -> list[str]:
         return list(FIXED_SYMBOLS)
@@ -577,6 +589,68 @@ class MarketData:
             return
         self.basis = data
         self.basis_stale = False
+
+    def poll_bond_curve(self) -> None:
+        """채권 만기수익률 곡선 (SEIBro) — bond_curve.py."""
+        try:
+            data = bond_curve.fetch_bond_curve()
+        except Exception:
+            log.exception("poll_bond_curve failed — keeping last known curve")
+            return
+        if not data:
+            log.warning("poll_bond_curve returned nothing — keeping last known curve")
+            return
+        self.bond_curve = data
+        self.bond_curve_stale = False
+
+    def poll_fx_bond_issues(self) -> None:
+        """외화표시채 발행 내역 (SEIBro) — fx_bond_issue.py."""
+        try:
+            rows = fx_bond_issue.fetch_fx_bond_issues()
+        except Exception:
+            log.exception("poll_fx_bond_issues failed — keeping last known issues")
+            return
+        if not rows:
+            log.warning("poll_fx_bond_issues returned nothing — keeping last known issues")
+            return
+        self.fx_bond_issues = rows
+
+    def poll_bond_flow(self) -> None:
+        """장외채권 투자자별 순매수 (KOFIA) — bond_flow.py."""
+        try:
+            data = bond_flow.fetch_bond_flow()
+        except Exception:
+            log.exception("poll_bond_flow failed — keeping last known flows")
+            return
+        if not data:
+            log.warning("poll_bond_flow returned nothing — keeping last known flows")
+            return
+        self.bond_flow = data
+        self.bond_flow_stale = False
+
+    def poll_bond_quotes(self) -> None:
+        """지표종목 최종호가수익률 (KOFIA) — bond_quotes.py."""
+        try:
+            data = bond_quotes.fetch_bond_quotes()
+        except Exception:
+            log.exception("poll_bond_quotes failed — keeping last known quotes")
+            return
+        if not data:
+            log.warning("poll_bond_quotes returned nothing — keeping last known quotes")
+            return
+        self.bond_quotes = data
+
+    def poll_short_term_rates(self) -> None:
+        """CP·전단채 대표수익률 (KOFIA) — short_term_rates.py."""
+        try:
+            data = short_term_rates.fetch_short_term_rates()
+        except Exception:
+            log.exception("poll_short_term_rates failed — keeping last known rates")
+            return
+        if not data:
+            log.warning("poll_short_term_rates returned nothing — keeping last known rates")
+            return
+        self.short_term_rates = data
 
     def poll_movers(self) -> None:
         """Real KOSPI+KOSDAQ top gainers/losers from Naver Finance — see
@@ -881,6 +955,133 @@ class MarketData:
                 "stale": self.basis_stale,
             }
 
+        # -- 채권 수익률 곡선 ------------------------------------------
+        # 금리는 색으로 방향을 나타낼 게 없는 수준(레벨) 값이라 색을 입히지
+        # 않는다. 국고채 대비 스프레드만 bp로 같이 내려 크레딧 폭을 본다.
+        bond_curve_rows = None
+        if self.bond_curve:
+            curves = self.bond_curve["curves"]
+            base = {p["label"]: p["yield"] for p in curves[0]["points"]} if curves else {}
+            bond_curve_rows = {
+                "asOf": self.bond_curve["asOf"],
+                "tenors": [t[1] for t in bond_curve.TENORS],
+                "baseLabel": curves[0]["label"] if curves else "",
+                "curves": [
+                    {
+                        "key": c["key"],
+                        "label": c["label"],
+                        "points": [
+                            {
+                                "label": p["label"],
+                                "years": p["years"],
+                                "yield": p["yield"],
+                                "value": f"{p['yield']:.2f}",
+                                "spread": (
+                                    None if i == 0 or p["label"] not in base
+                                    else round((p["yield"] - base[p["label"]]) * 100)
+                                ),
+                            }
+                            for p in c["points"]
+                        ],
+                    }
+                    for i, c in enumerate(curves)
+                ],
+                "stale": self.bond_curve_stale,
+            }
+
+        # -- 지표종목 최종호가수익률 ------------------------------------
+        # 금리 레벨 자체는 방향이 없으니 색을 안 입히고, 전일대비만 색을
+        # 준다. 금리 상승은 채권 약세라 KR 스킴의 up(빨강)과 뜻이 다르므로
+        # 여기서는 상승/하락 그대로 읽으라고 화살표를 같이 붙인다.
+        bond_quote_rows = None
+        if self.bond_quotes:
+            bond_quote_rows = {
+                "asOf": self.bond_quotes["asOf"],
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "term": r["term"],
+                        "yield": f"{r['yield']:.3f}",
+                        "changeBp": (
+                            "—" if r["changeBp"] is None
+                            else f"{r['changeBp']:+.1f}bp"
+                        ),
+                        "changeColor": (
+                            flat if not r["changeBp"]
+                            else up if r["changeBp"] > 0 else down
+                        ),
+                        "arrow": (
+                            "–" if not r["changeBp"]
+                            else "▲" if r["changeBp"] > 0 else "▼"
+                        ),
+                        "range": (
+                            f"{r['low']:.2f} ~ {r['high']:.2f}"
+                            if r["low"] is not None and r["high"] is not None else "—"
+                        ),
+                    }
+                    for r in self.bond_quotes["rows"]
+                ],
+            }
+
+        # -- 단기금융시장 금리 (CP·전단채) -----------------------------
+        short_term_rows = None
+        if self.short_term_rates:
+            st = self.short_term_rates
+            short_term_rows = {
+                "asOf": st["asOf"],
+                "tenors": st["tenors"],
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "rates": [
+                            "—" if v is None else f"{v:.2f}" for v in r["rates"]
+                        ],
+                        # 거래대금이 백만원 단위라 조/억으로 접는다.
+                        "amount": _fmt_krw_value(r["amount"]) if r["amount"] else "—",
+                    }
+                    for r in st["rows"]
+                ],
+            }
+
+        # -- 채권 수급 -------------------------------------------------
+        # 주식 수급과 같은 색 규칙 (순매수 빨강 / 순매도 파랑). 단위가 이미
+        # 억원이라 조 단위만 접는다.
+        def fmt_eok(v: int) -> str:
+            if abs(v) >= 10_000:
+                return f"{v / 10_000:+,.2f}조"
+            return f"{v:+,}억" if v else "0억"
+
+        bond_flow_rows = None
+        if self.bond_flow:
+            bf = self.bond_flow
+            bond_flow_rows = {
+                "asOf": bf["asOf"],
+                "bondTypes": bf["bondTypes"],
+                "periods": {
+                    p["key"]: {
+                        bond_type: [
+                            {
+                                "key": c["key"],
+                                "label": c["label"],
+                                "value": fmt_eok(c["value"]),
+                                "raw": c["value"],
+                                "color": up if c["value"] > 0 else down if c["value"] < 0 else flat,
+                            }
+                            for c in cells
+                        ]
+                        for bond_type, cells in bf["periods"][p["key"]].items()
+                    }
+                    for p in bond_flow.PERIODS
+                },
+                "stale": self.bond_flow_stale,
+            }
+
+        # -- 외화표시채 발행 -------------------------------------------
+        fx_bond_rows = [
+            {k: v for k, v in row.items() if k != "sortKey"}
+            for row in self.fx_bond_issues
+        ]
+
         # -- 키워드 뉴스 -----------------------------------------------
         # 스냅샷은 10초마다 접속자 전원에게 통째로 나간다. 화면은 그룹당
         # 3페이지(45건)까지만 보여주므로 M&A처럼 150건 가까이 잡히는
@@ -924,4 +1125,10 @@ class MarketData:
             "investorFlowPeriods": kr_investor_flow.PERIODS,
             "basis": basis,
             "keywordNews": keyword_news_rows,
+            "bondCurve": bond_curve_rows,
+            "fxBondIssues": fx_bond_rows,
+            "bondFlow": bond_flow_rows,
+            "bondFlowPeriods": bond_flow.PERIODS,
+            "bondQuotes": bond_quote_rows,
+            "shortTermRates": short_term_rows,
         }

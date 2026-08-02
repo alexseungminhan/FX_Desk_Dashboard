@@ -14,6 +14,9 @@
   let flowChartPeriod = "1d";
   let kwNewsGroup = "fxbond";
   let kwNewsPage = 1;
+  let curveKey = "국고채권";
+  let bondFlowType = "합계";
+  let bondFlowPeriod = "1d";
   // 환율 뉴스는 스냅샷이 아니라 여기 붙들어 둔다 — 페이저를 눌렀을 때
   // 스냅샷을 기다리지 않고 바로 그 자리에서 다시 그리기 위해서다.
   let fxNewsRows = null;
@@ -245,22 +248,9 @@
     return 10 * base;
   }
 
-  let flowChartKey = "";   // 마지막으로 그린 차트의 데이터 서명
-
-  function renderFlowChart(data, periods) {
-    const box = $("flow-chart");
-    const cells = (data.periods[flowChartPeriod] || []).filter((c) => c.chart);
-    const period = periods.find((p) => p.key === flowChartPeriod);
-    $("flow-chart-period").textContent = period ? `· ${period.label} 누적` : "";
-
-    if (!cells.length) { box.innerHTML = ""; flowChartKey = ""; return; }
-
-    // 스냅샷은 10초마다 오지만 수급 원본은 5분마다 갱신된다. 값이 그대로면
-    // SVG를 다시 만들지 않는다 — 매번 새로 그리면 눈에 띄게 깜빡인다.
-    const key = `${data.label}|${flowChartPeriod}|${cells.map((c) => c.raw).join(",")}`;
-    if (key === flowChartKey) return;
-    flowChartKey = key;
-
+  // 주식 수급·채권 수급이 같은 막대 차트를 쓴다. cells 는
+  // [{label, raw, value, color}], axisFmt 는 눈금 숫자 포맷터.
+  function netBuyBarsSvg(cells, axisFmt, ariaLabel) {
     const step = niceStep(Math.max(...cells.map((c) => Math.abs(c.raw))) / 2) || 1;
     const max = step * 2;                       // 위아래 각 2칸 = 눈금선 5줄
     const x0 = FLOW_PAD.l, x1 = FLOW_W - FLOW_PAD.r;
@@ -278,7 +268,7 @@
       const v = step * i;
       const y = yFor(v);
       grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${i === 0 ? "#b9b9bc" : "#dedee0"}" stroke-width="1"/>`
-        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${esc(flowAxisLabel(v, data.unitLabel))}</text>`;
+        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${esc(axisFmt(v))}</text>`;
     }
 
     const marks = cells.map((c, i) => {
@@ -303,12 +293,293 @@
         </g>`;
     }).join("");
 
-    box.innerHTML = `
+    return `
       <svg viewBox="0 0 ${FLOW_W} ${FLOW_H}" width="100%" height="${FLOW_H}"
            preserveAspectRatio="xMidYMid meet" role="img"
-           aria-label="${esc(data.label)} 주체별 순매수">
+           aria-label="${esc(ariaLabel)}">
         ${grid}${marks}
       </svg>`;
+  }
+
+  let flowChartKey = "";   // 마지막으로 그린 차트의 데이터 서명
+
+  function renderFlowChart(data, periods) {
+    const box = $("flow-chart");
+    const cells = (data.periods[flowChartPeriod] || []).filter((c) => c.chart);
+    const period = periods.find((p) => p.key === flowChartPeriod);
+    $("flow-chart-period").textContent = period ? `· ${period.label} 누적` : "";
+
+    if (!cells.length) { box.innerHTML = ""; flowChartKey = ""; return; }
+
+    // 스냅샷은 10초마다 오지만 수급 원본은 5분마다 갱신된다. 값이 그대로면
+    // SVG를 다시 만들지 않는다 — 매번 새로 그리면 눈에 띄게 깜빡인다.
+    const key = `${data.label}|${flowChartPeriod}|${cells.map((c) => c.raw).join(",")}`;
+    if (key === flowChartKey) return;
+    flowChartKey = key;
+
+    box.innerHTML = netBuyBarsSvg(cells, (v) => flowAxisLabel(v, data.unitLabel),
+      `${data.label} 주체별 순매수`);
+  }
+
+  // -- 채권 수급 (KOFIA 장외채권) ----------------------------------------
+
+  // 채권 수급은 서버가 이미 억원으로 준다 — 주식 쪽(백만원)과 단위가 달라
+  // 축 포맷터를 따로 둔다.
+  function bondAxisLabel(v) {
+    if (v === 0) return "0";
+    return Math.abs(v) >= 10000
+      ? `${(v / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
+      : `${Math.round(v).toLocaleString("en-US")}억`;
+  }
+
+  let bondFlowChartKey = "";
+
+  function renderBondFlow() {
+    if (!latest) return;
+    const bf = latest.bondFlow;
+    const periods = latest.bondFlowPeriods || [];
+    const table = $("bflow-table");
+
+    if (!bf || !periods.length) {
+      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">채권 수급을 불러오지 못했습니다.</div>`;
+      $("bflow-foot").textContent = "";
+      $("bflow-chart").innerHTML = "";
+      return;
+    }
+
+    if (!bf.bondTypes.includes(bondFlowType)) bondFlowType = bf.bondTypes[0];
+
+    // 채권종류 탭은 서버가 준 목록으로 만든다.
+    const seg = $("bflow-seg");
+    if (seg.dataset.keys !== bf.bondTypes.join("|")) {
+      seg.dataset.keys = bf.bondTypes.join("|");
+      seg.innerHTML = bf.bondTypes.map((t) => `
+        <label class="seg-opt" style="padding:4px 10px;font-size:11.5px">
+          <input type="radio" name="bflowsel" value="${esc(t)}"${t === bondFlowType ? " checked" : ""}><span>${esc(t)}</span>
+        </label>`).join("");
+      seg.querySelectorAll("input").forEach((el) => {
+        el.addEventListener("change", () => { bondFlowType = el.value; renderBondFlow(); });
+      });
+    }
+
+    const head = `<div class="flow-row bflow-row flow-head"><span>투자자</span>${
+      periods.map((p) => `<span>${esc(p.label)}</span>`).join("")}</div>`;
+
+    const first = bf.periods[periods[0].key][bondFlowType] || [];
+    const rows = first.map((_, i) => {
+      const cells = periods.map((p) => {
+        const c = (bf.periods[p.key][bondFlowType] || [])[i];
+        return c
+          ? `<span class="mono flow-val" style="color:${c.color}">${esc(c.value)}</span>`
+          : `<span class="mono flow-val" style="color:#c4c4c6">—</span>`;
+      }).join("");
+      return `<div class="flow-row bflow-row"><span class="flow-name">${esc(first[i].label)}</span>${cells}</div>`;
+    }).join("");
+
+    table.innerHTML = head + rows;
+    const d = bf.asOf;
+    $("bflow-foot").textContent =
+      `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 기준 · 단위 원 · 순매수 = 매수 − 매도 · 장외 거래대금`
+      + (bf.stale ? " · 갱신 실패(직전 값)" : "");
+
+    const period = periods.find((p) => p.key === bondFlowPeriod);
+    $("bflow-chart-label").textContent = period ? `· ${bondFlowType} · ${period.label} 누적` : "";
+    const cells = bf.periods[bondFlowPeriod][bondFlowType] || [];
+    if (!cells.length) { $("bflow-chart").innerHTML = ""; bondFlowChartKey = ""; return; }
+
+    const key = `${bondFlowType}|${bondFlowPeriod}|${cells.map((c) => c.raw).join(",")}`;
+    if (key === bondFlowChartKey) return;
+    bondFlowChartKey = key;
+    $("bflow-chart").innerHTML = netBuyBarsSvg(cells, bondAxisLabel,
+      `${bondFlowType} 주체별 순매수`);
+  }
+
+  // -- 지표종목 최종호가 (채권 커브 패널 상단) ----------------------------
+  // 금리 레벨에는 색을 안 입힌다 — 오르내림이 아니라 수준이라서다.
+  // 전일대비만 색·화살표를 달아 방향을 나른다.
+
+  function renderBondQuotes() {
+    if (!latest) return;
+    const q = latest.bondQuotes;
+    const list = $("quotes-list");
+    if (!q || !q.rows.length) {
+      list.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">최종호가를 불러오지 못했습니다.</div>`;
+      $("quotes-asof").textContent = "";
+      return;
+    }
+
+    const head = `<div class="q-row q-head">
+      <span>종목</span><span>잔존기간</span><span class="q-num">수익률</span>
+      <span class="q-num">전일대비</span><span class="q-num">연중 최저~최고</span></div>`;
+
+    list.innerHTML = head + q.rows.map((r) => `
+      <div class="q-row">
+        <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</span>
+        <span style="color:#7a7a7d;font-size:11px">${esc(r.term)}</span>
+        <span class="mono q-num" style="font-weight:500">${esc(r["yield"])}</span>
+        <span class="mono q-num" style="color:${r.changeColor}">${r.arrow} ${esc(r.changeBp)}</span>
+        <span class="mono q-num" style="color:#7a7a7d;font-size:11px">${esc(r.range)}</span>
+      </div>`).join("");
+
+    const d = q.asOf;
+    $("quotes-asof").textContent = `· ${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} · 단위 %`;
+  }
+
+  // -- 단기금융시장 금리 (CP · 전단채) ------------------------------------
+
+  function renderShortTermRates() {
+    if (!latest) return;
+    const st = latest.shortTermRates;
+    const table = $("strate-table");
+    if (!st || !st.rows.length) {
+      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">단기금리를 불러오지 못했습니다.</div>`;
+      $("strate-asof").textContent = "";
+      $("strate-foot").textContent = "";
+      return;
+    }
+
+    const head = `<div class="st-row st-head"><span>구분</span>${
+      st.tenors.map((t) => `<span class="st-num">${esc(t)}</span>`).join("")
+      }<span class="st-num">당일 거래대금</span></div>`;
+
+    table.innerHTML = head + st.rows.map((r) => `
+      <div class="st-row">
+        <span style="font-weight:500;white-space:nowrap">${esc(r.label)}</span>
+        ${r.rates.map((v) => `<span class="mono st-num"${v === "—" ? ' style="color:#c4c4c6"' : ""}>${esc(v)}</span>`).join("")}
+        <span class="mono st-num" style="color:#7a7a7d">${esc(r.amount)}</span>
+      </div>`).join("");
+
+    const d = st.asOf;
+    $("strate-asof").textContent = `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시`;
+    $("strate-foot").textContent = "단위 % · 만기구간별 가중평균금리 · 거래가 거의 없는 구간의 금리는 참고치";
+  }
+
+  // -- 채권 수익률 곡선 --------------------------------------------------
+
+  function renderBondCurve() {
+    if (!latest) return;
+    const bc = latest.bondCurve;
+    const table = $("curve-table");
+    if (!bc || !bc.curves.length) {
+      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">수익률 곡선을 불러오지 못했습니다.</div>`;
+      $("curve-asof").textContent = "";
+      $("curve-chart").innerHTML = "";
+      return;
+    }
+
+    const head = `<div class="cv-row cv-head"><span>종류</span>${
+      bc.tenors.map((t) => `<span>${esc(t)}</span>`).join("")}</div>`;
+
+    const rows = bc.curves.map((c, ci) => {
+      const byTenor = new Map(c.points.map((p) => [p.label, p]));
+      const cells = bc.tenors.map((t) => {
+        const p = byTenor.get(t);
+        if (!p) return `<span class="mono cv-val" style="color:#c4c4c6">—</span>`;
+        // 국고채(기준) 행은 스프레드가 0이므로 값만 보여준다.
+        const spread = p.spread == null ? "" : `<small>${p.spread >= 0 ? "+" : ""}${p.spread}bp</small>`;
+        return `<span class="mono cv-val">${esc(p.value)}${spread}</span>`;
+      }).join("");
+      return `<div class="cv-row${ci === 0 ? " cv-base" : ""}"><span class="cv-name">${esc(c.label)}</span>${cells}</div>`;
+    }).join("");
+
+    table.innerHTML = head + rows;
+    const d = bc.asOf;
+    $("curve-asof").textContent = d.length === 8 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시` : d;
+    $("curve-foot").textContent = "단위 % · 값 아래는 국고채권 대비 스프레드"
+      + (bc.stale ? " · 갱신 실패(직전 값)" : "");
+
+    // 종류 선택 탭은 서버가 준 커브 목록에서 만든다 (종류가 바뀌어도 따라간다)
+    const seg = $("curve-seg");
+    if (seg.dataset.keys !== bc.curves.map((c) => c.key).join("|")) {
+      seg.dataset.keys = bc.curves.map((c) => c.key).join("|");
+      seg.innerHTML = bc.curves.map((c, i) => `
+        <label class="seg-opt" style="padding:3px 10px;font-size:11.5px">
+          <input type="radio" name="curvesel" value="${esc(c.key)}"${i === 0 ? " checked" : ""}><span>${esc(c.label)}</span>
+        </label>`).join("");
+      seg.querySelectorAll("input").forEach((el) => {
+        el.addEventListener("change", () => { curveKey = el.value; renderBondCurve(); });
+      });
+      if (!bc.curves.some((c) => c.key === curveKey)) curveKey = bc.curves[0].key;
+    }
+
+    renderCurveChart(bc.curves.find((c) => c.key === curveKey) || bc.curves[0]);
+  }
+
+  // 만기(x)에 대한 수익률(y) 한 줄짜리 선 그래프. 계열이 하나뿐이라 색은
+  // 식별이 아니라 강조만 하고, 범례 없이 제목이 무엇을 그린 건지 말한다.
+  function renderCurveChart(curve) {
+    const box = $("curve-chart");
+    $("curve-chart-label").textContent = `· ${curve.label}`;
+    const pts = curve.points;
+    if (pts.length < 2) { box.innerHTML = ""; return; }
+
+    const W = FLOW_W, H = 210, P = { l: 52, r: 16, t: 18, b: 34 };
+    const x0 = P.l, x1 = W - P.r, y0 = P.t, y1 = H - P.b;
+
+    const ys = pts.map((p) => p.yield);
+    const lo = Math.min(...ys), hi = Math.max(...ys);
+    const pad = (hi - lo) * 0.18 || 0.2;
+    const top = hi + pad, bottom = Math.max(0, lo - pad);
+    const yFor = (v) => y1 - ((v - bottom) / (top - bottom)) * (y1 - y0);
+    // 만기 간격이 3개월~20년으로 극단적이라 실제 연수로 두면 앞쪽이 뭉친다.
+    // 순서만 유지해 등간격으로 편다.
+    const xFor = (i) => x0 + (i / (pts.length - 1)) * (x1 - x0);
+
+    let grid = "";
+    for (let i = 0; i <= 3; i++) {
+      const v = bottom + ((top - bottom) * i) / 3;
+      const y = yFor(v);
+      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="#dedee0" stroke-width="1"/>`
+        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${v.toFixed(2)}</text>`;
+    }
+
+    const line = pts.map((p, i) => `${i ? "L" : "M"}${xFor(i)} ${yFor(p.yield)}`).join(" ");
+    const area = `${line} L${xFor(pts.length - 1)} ${y1} L${x0} ${y1} Z`;
+
+    const marks = pts.map((p, i) => {
+      const cx = xFor(i), cy = yFor(p.yield);
+      return `
+        <g>
+          <title>${esc(p.label)} ${esc(p.value)}%</title>
+          <circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/>
+          <circle cx="${cx}" cy="${cy}" r="4" fill="#5980a6" stroke="#f2f2f3" stroke-width="2"/>
+          <text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(p.value)}</text>
+          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(p.label)}</text>
+        </g>`;
+    }).join("");
+
+    box.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="${esc(curve.label)} 만기별 수익률">
+        ${grid}
+        <path d="${area}" fill="rgba(89,128,166,.10)"/>
+        <path d="${line}" fill="none" stroke="#5980a6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${marks}
+      </svg>`;
+  }
+
+  // -- 외화표시채 발행 ---------------------------------------------------
+
+  function renderFxBondIssues() {
+    if (!latest) return;
+    const rows = latest.fxBondIssues || [];
+    $("fxbond-empty").style.display = rows.length ? "none" : "block";
+    $("fxbond-count").textContent = rows.length ? `${rows.length}건` : "";
+
+    const head = `<div class="fb-row fb-head">
+      <span>발행일</span><span>발행사</span><span>종목</span><span>통화</span>
+      <span class="fb-num">발행액</span><span class="fb-num">쿠폰</span><span class="fb-num">만기</span></div>`;
+
+    $("fxbond-list").innerHTML = head + rows.map((r) => `
+      <div class="fb-row">
+        <span class="mono" style="color:#7a7a7d">${esc(r.issueDate)}</span>
+        <span class="fb-name" style="font-weight:500">${esc(r.issuer)}</span>
+        <span class="fb-name" style="color:#5d5d60" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="mono" style="font-size:11px">${esc(r.currency)}</span>
+        <span class="mono fb-num">${esc(r.amount)}</span>
+        <span class="mono fb-num">${esc(r.coupon)}</span>
+        <span class="mono fb-num" style="color:#7a7a7d">${esc(r.maturity)}</span>
+      </div>`).join("");
   }
 
   // -- 코스피200 현·선물 베이시스 ---------------------------------------
@@ -508,6 +779,11 @@
     renderFxNews(snapshot.fxNews);
     renderNews();
     renderInvestorFlow();
+    renderBondFlow();
+    renderBondQuotes();
+    renderShortTermRates();
+    renderBondCurve();
+    renderFxBondIssues();
     renderBasis();
     renderKeywordNews();
     if (snapshot.asOf) {
@@ -528,6 +804,9 @@
   }
   for (const period of ["1d", "1w", "1m", "3m"]) {
     $(`flowp-${period}`).addEventListener("change", () => { flowChartPeriod = period; renderInvestorFlow(); });
+  }
+  for (const period of ["1d", "1w", "1m", "3m"]) {
+    $(`bflowp-${period}`).addEventListener("change", () => { bondFlowPeriod = period; renderBondFlow(); });
   }
   for (const group of ["fxbond", "ma", "blockdeal", "dividend"]) {
     $(`kwn-${group}`).addEventListener("change", () => {

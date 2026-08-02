@@ -39,6 +39,8 @@ INVESTOR_FLOW_POLL_SECONDS = 300
 KEYWORD_NEWS_POLL_SECONDS = 600
 KEYWORD_NEWS_START_DELAY_SECONDS = 25
 BASIS_POLL_SECONDS = 60
+# SEIBro·KOFIA 는 일별 확정치라 자주 부를 이유가 없다.
+DAILY_SOURCES_POLL_SECONDS = 1800
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -173,6 +175,20 @@ async def _basis_loop() -> None:
         await asyncio.sleep(BASIS_POLL_SECONDS)
 
 
+async def _daily_sources_loop() -> None:
+    """SEIBro(채권 커브·외화표시채) + KOFIA(수급·최종호가·단기금리) — 모두 일별 확정치."""
+    while True:
+        try:
+            await asyncio.to_thread(market.poll_bond_curve)
+            await asyncio.to_thread(market.poll_fx_bond_issues)
+            await asyncio.to_thread(market.poll_bond_flow)
+            await asyncio.to_thread(market.poll_bond_quotes)
+            await asyncio.to_thread(market.poll_short_term_rates)
+        except Exception:
+            log.exception("daily sources loop iteration failed")
+        await asyncio.sleep(DAILY_SOURCES_POLL_SECONDS)
+
+
 @app.on_event("startup")
 async def startup() -> None:
     # Seed everything before serving so the very first page load already
@@ -188,6 +204,11 @@ async def startup() -> None:
         asyncio.to_thread(market.poll_fx_news),
         asyncio.to_thread(market.poll_kr_rates),
         asyncio.to_thread(market.poll_investor_flow),
+        asyncio.to_thread(market.poll_bond_curve),
+        asyncio.to_thread(market.poll_fx_bond_issues),
+        asyncio.to_thread(market.poll_bond_flow),
+        asyncio.to_thread(market.poll_bond_quotes),
+        asyncio.to_thread(market.poll_short_term_rates),
     )
     # 베이시스 이론가는 CD(91일)를 조달금리로 쓰므로 kr_rates 다음에 받는다.
     # 첫 스냅샷부터 대체값이 아닌 실제 고시금리가 들어가게 하려는 것.
@@ -203,6 +224,7 @@ async def startup() -> None:
     asyncio.create_task(_kr_rates_loop())
     asyncio.create_task(_investor_flow_loop())
     asyncio.create_task(_basis_loop())
+    asyncio.create_task(_daily_sources_loop())
     # 키워드 뉴스는 검색 스로틀 때문에 한 바퀴가 20초쯤 걸린다. 첫 화면을
     # 그만큼 늦출 이유가 없어 시드 없이 루프에만 맡긴다 (루프가 즉시 1회 돈다).
     asyncio.create_task(_keyword_news_loop())

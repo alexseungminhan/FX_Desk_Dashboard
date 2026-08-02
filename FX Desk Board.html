@@ -38,8 +38,33 @@
   .bs-stat{display:flex;flex-direction:column;gap:2px}
   .bs-stat span{font-size:11px;color:#7a7a7d;letter-spacing:.02em}
   .bs-stat b{font-size:14.5px;font-weight:500}
+  /* 채권 수급은 "자산운용(공모)" 처럼 라벨이 길어 첫 열을 넓게 잡는다 */
+  .bflow-row{grid-template-columns:110px repeat(4,1fr)}
   /* 탭이 좁은 패널에서 글자 단위로 접히지 않게 — 줄바꿈 대신 한 줄 유지 */
   .seg-nowrap .seg-opt span{white-space:nowrap}
+  /* 채권 커브: 종류(행) × 만기(열). 국고채 행만 굵게 세워 기준선을 만든다 */
+  .cv-row{display:grid;grid-template-columns:104px repeat(8,1fr);gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .cv-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px}
+  .cv-head span{font-size:10.5px;color:#98989b;text-align:right;letter-spacing:.06em}
+  .cv-head span:first-child{text-align:left}
+  .cv-name{font-size:12px;white-space:nowrap}
+  .cv-base .cv-name{font-weight:600}
+  .cv-val{font-size:12px;text-align:right}
+  /* 국고채 대비 스프레드는 값 아래 작게 — 레벨과 폭을 한 칸에서 같이 읽는다 */
+  .cv-val small{display:block;font-size:9.5px;color:#98989b;font-weight:400}
+  /* 지표종목 최종호가: 종목 | 잔존 | 수익률 | 전일대비 | 연중레인지 */
+  .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .q-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
+  .q-num{text-align:right}
+  /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
+  .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .st-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
+  .st-num{text-align:right}
+  /* 외화표시채 발행 */
+  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 44px auto 62px 62px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .fb-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
+  .fb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fb-num{text-align:right}
   /* 키워드 뉴스 */
   .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06);align-items:baseline}
   .kwn-when{font-size:10.5px;color:#98989b;white-space:nowrap}
@@ -220,6 +245,64 @@
     </div>
 
     <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
+            <div class="seg seg-nowrap" id="bflow-seg" style="height:28px"></div>
+          </div>
+          <div id="bflow-table"></div>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:#98989b;font-weight:400" id="bflow-chart-label"></span></h5>
+            <div class="seg" style="height:26px">
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1d" checked><span>1일</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1w"><span>1주</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1m"><span>1개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-3m"><span>3개월</span></label>
+            </div>
+          </div>
+          <div id="bflow-chart"></div>
+          <div id="bflow-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
+        </div>
+
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
+            <span id="curve-asof" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">지표종목 최종호가 <span style="color:#98989b;font-weight:400" id="quotes-asof"></span></h5>
+          <div id="quotes-list"></div>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">종류별 만기수익률</h5>
+          <div id="curve-table"></div>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">만기별 곡선 <span style="color:#98989b;font-weight:400" id="curve-chart-label"></span></h5>
+            <div class="seg seg-nowrap" id="curve-seg" style="height:26px"></div>
+          </div>
+          <div id="curve-chart"></div>
+          <div id="curve-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
+        </div>
+
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
+            <span id="strate-asof" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <div id="strate-table"></div>
+          <div id="strate-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
+        </div>
+
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
+            <span id="fxbond-count" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <div id="fxbond-list"></div>
+          <div id="fxbond-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
+        </div>
+
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <h4 style="margin:0 0 10px">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
