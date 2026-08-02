@@ -185,6 +185,39 @@ def _fmt_volume(v: float | None) -> str:
     return f"{v:,.0f}"
 
 
+# Corporate/fund boilerplate Yahoo carries in shortName. The 종목명
+# column is one narrow line, so the suffixes are trimmed to keep the
+# distinguishing part of the name visible before the ellipsis kicks in.
+# The untrimmed name still rides along as fullName for the tooltip.
+_NAME_SUFFIXES = (
+    "american depositary shares", "ordinary shares", "common stock",
+    "incorporated", "corporation", "company", "limited",
+    "inc", "corp", "co", "ltd", "plc", "ag", "nv",
+)
+
+
+def _clean_us_name(name: str | None) -> str:
+    """Strip trailing corporate suffixes off a Yahoo shortName —
+    "Advanced Micro Devices, Inc." -> "Advanced Micro Devices". Names
+    that end in no suffix (most ETFs) come back untouched, punctuation
+    and all, so "Vale S.A." doesn't lose its final period."""
+    if not name:
+        return ""
+    out = name.strip()
+    while True:
+        core = out.rstrip(" .,&")  # matched without the trailing "Inc." period
+        lowered = core.lower()
+        for suffix in _NAME_SUFFIXES:
+            if lowered.endswith(" " + suffix) or lowered.endswith("," + suffix):
+                trimmed = core[: len(core) - len(suffix)].rstrip(" .,&")
+                if trimmed:
+                    out = trimmed
+                    break
+                return out
+        else:
+            return out
+
+
 def _fmt_krw_value(million_won: float) -> str:
     """Format a Naver 거래대금 figure (already in 백만원) as 조/억원,
     matching how 네이버 증권 itself displays trading value."""
@@ -631,11 +664,12 @@ class MarketData:
             pct = m["pct"]
             color = up if pct > 0 else down if pct < 0 else flat
             arrow = "▲" if pct > 0 else "▼" if pct < 0 else "–"
+            full_name = m.get("name") or m["symbol"]
             return {
                 "rank": i + 1,
                 "symbol": m["symbol"],
-                "name": m["symbol"],
-                "fullName": m.get("name") or m["symbol"],
+                "name": _clean_us_name(full_name) or m["symbol"],
+                "fullName": full_name,
                 "kind": m.get("kind", ""),  # "ETF" | "" (개별종목)
                 "price": _fmt_usd(m["price"]),
                 "pct": f"{pct:+.2f}%",

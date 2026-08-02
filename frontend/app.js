@@ -111,7 +111,7 @@
     if (!latest) return;
     const rows = usMoversTab === "gainers" ? latest.usGainers : latest.usLosers;
     $("us-movers-list").innerHTML = rows.map((m) => `
-      <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.fullName)}">
+      <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
@@ -122,7 +122,7 @@
   function renderUsMostActive() {
     if (!latest) return;
     $("us-most-active-list").innerHTML = latest.usMostActive.map((m) => `
-      <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.fullName)}">
+      <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
