@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=4">
+<link rel="stylesheet" href="/static/styles.css?v=5">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -77,6 +77,15 @@
   .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .q-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
   .q-num{text-align:right}
+  /* 원화 스왑: 만기 | SMBS Bid/Offer/연율 | KMB Bid/Offer/연율 */
+  .sw-row{display:grid;grid-template-columns:56px repeat(6,1fr);gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  /* 중개사 구획: SMBS 묶음과 KMB 묶음 사이에 세로 구분선 */
+  .sw-row > span:nth-child(4){border-right:1px solid rgba(29,31,32,.12);padding-right:10px}
+  .ic-row,.bi-row{display:grid;grid-template-columns:70px repeat(3,1fr);gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .sw-head,.ic-head,.bi-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
+  .sw-num{text-align:right}
+  #swap-table{min-width:640px}
+  #irscrs-table,#bondirs-table{min-width:480px}
   /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
   .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .st-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
@@ -282,6 +291,21 @@
           </div>
           <div class="scroll-x"><div id="bflow-chart"></div></div>
           <div id="bflow-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
+        </div>
+
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
+            <span id="swap-asof" class="mono" style="font-size:11px;color:#98989b"></span>
+          </div>
+          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">FX 스왑포인트 <span style="color:#98989b;font-weight:400" id="swap-spot"></span></h5>
+          <div class="scroll-x"><div id="swap-table"></div></div>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">IRS · CRS <span style="color:#98989b;font-weight:400" id="irscrs-src">· 통화베이시스 = CRS − IRS</span></h5>
+          <div class="scroll-x"><div id="irscrs-table"></div></div>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">국고채 − IRS <span style="color:#98989b;font-weight:400">· 스프레드 = 국고채 현물 − IRS</span></h5>
+          <div class="scroll-x"><div id="bondirs-table"></div></div>
+          <div id="swap-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
         </div>
 
         <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
@@ -520,6 +544,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=4"></script>
+<script src="/static/app.js?v=5"></script>
 </body>
 </html>

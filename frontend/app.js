@@ -430,6 +430,79 @@
     $("quotes-asof").textContent = `· ${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} · 단위 %`;
   }
 
+  // -- 원화 스왑 (FX 스왑포인트 · IRS/CRS) --------------------------------
+  // 포인트·금리는 레벨이라 색을 안 입힌다. 통화베이시스만 부호가 뜻을
+  // 가지므로(음수 = 원화 조달 프리미엄) 색을 준다.
+
+  function renderKrwSwap() {
+    if (!latest) return;
+    const sp = latest.swapPoints, ic = latest.irsCrs;
+
+    const swapBox = $("swap-table");
+    if (!sp || !sp.rows.length) {
+      swapBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">스왑포인트를 불러오지 못했습니다.</div>`;
+      $("swap-spot").textContent = "";
+    } else {
+      // 양대 중개사(서울외국환중개·한국자금중개)를 나란히 — 같은 상품의
+      // 호가 폭이 비교되고 연율 Mid 는 서로 검증이 된다.
+      const head = `<div class="sw-row sw-head"><span>만기</span>
+        <span class="sw-num">SMBS Bid</span><span class="sw-num">Offer</span><span class="sw-num">연율</span>
+        <span class="sw-num">KMB Bid</span><span class="sw-num">Offer</span><span class="sw-num">연율</span></div>`;
+      const cell = (v, bold) =>
+        `<span class="mono sw-num"${v === "—" ? ' style="color:#c4c4c6"' : bold ? ' style="font-weight:500"' : ' style="color:#5d5d60"'}>${esc(v)}</span>`;
+      swapBox.innerHTML = head + sp.rows.map((r) => `
+        <div class="sw-row">
+          <span style="font-weight:500">${esc(r.label)}</span>
+          ${cell(r.smbs.bid)}${cell(r.smbs.offer)}${cell(r.smbs.annualized, true)}
+          ${cell(r.kmb.bid)}${cell(r.kmb.offer)}${cell(r.kmb.annualized, true)}
+        </div>`).join("");
+      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · 연율은 각사 Mid 환산`;
+    }
+
+    const icBox = $("irscrs-table");
+    if (!ic || !ic.rows.length) {
+      icBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">IRS·CRS를 불러오지 못했습니다.</div>`;
+    } else {
+      const head = `<div class="ic-row ic-head"><span>만기</span>
+        <span class="sw-num">IRS</span><span class="sw-num">CRS</span>
+        <span class="sw-num">베이시스</span></div>`;
+      icBox.innerHTML = head + ic.rows.map((r) => `
+        <div class="ic-row">
+          <span style="font-weight:500">${esc(r.label)}</span>
+          <span class="mono sw-num">${esc(r.irs)}</span>
+          <span class="mono sw-num">${esc(r.crs)}</span>
+          <span class="mono sw-num" style="color:${r.basisColor};font-weight:500">${esc(r.basis)}</span>
+        </div>`).join("");
+    }
+
+    if (ic && ic.source) {
+      $("irscrs-src").textContent = `· 통화베이시스 = CRS − IRS · ${ic.source} Mid 고시`;
+    }
+
+    // 국고채(현물) − IRS 스프레드 — 채권과 스왑 커브 사이의 괴리.
+    const bi = latest.bondIrs;
+    const biBox = $("bondirs-table");
+    if (!bi || !bi.rows.length) {
+      biBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">국고채 또는 IRS 데이터를 기다리는 중입니다.</div>`;
+    } else {
+      const head = `<div class="bi-row bi-head"><span>만기</span>
+        <span class="sw-num">국고채</span><span class="sw-num">IRS</span>
+        <span class="sw-num">스프레드</span></div>`;
+      biBox.innerHTML = head + bi.rows.map((r) => `
+        <div class="bi-row">
+          <span style="font-weight:500">${esc(r.label)}</span>
+          <span class="mono sw-num">${esc(r.ktb)}</span>
+          <span class="mono sw-num">${esc(r.irs)}</span>
+          <span class="mono sw-num" style="color:${r.spreadColor};font-weight:500">${esc(r.spread)}</span>
+        </div>`).join("");
+    }
+
+    const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
+    $("swap-asof").textContent = stamp ? `${stamp} 고시` : "";
+    $("swap-foot").textContent =
+      "스왑포인트 단위 전(1전 = 0.01원) · 연율 = 포인트/현물 × 365/일수 · IRS·CRS·국고채 단위 % · 국고채는 KOFIA 최종호가";
+  }
+
   // -- 단기금융시장 금리 (CP · 전단채) ------------------------------------
 
   function renderShortTermRates() {
@@ -794,6 +867,7 @@
     renderInvestorFlow();
     renderBondFlow();
     renderBondQuotes();
+    renderKrwSwap();
     renderShortTermRates();
     renderBondCurve();
     renderFxBondIssues();

@@ -30,6 +30,7 @@ import kospi200_basis
 import kr_investor_flow
 import kr_movers
 import kr_rates
+import krw_swap
 import naver_news
 import short_term_rates
 import us_movers
@@ -363,6 +364,8 @@ class MarketData:
         self.fx_bond_issues: list[dict] = []
         self.bond_flow: dict | None = None
         self.bond_flow_stale: bool = True
+        self.swap_points: dict | None = None
+        self.irs_crs: dict | None = None
         self.bond_quotes: dict | None = None
         self.short_term_rates: dict | None = None
 
@@ -629,6 +632,26 @@ class MarketData:
             return
         self.bond_flow = data
         self.bond_flow_stale = False
+
+    def _usdkrw_spot(self) -> float | None:
+        """스왑포인트 연율 환산의 분모. 보드가 이미 받고 있는 값을 쓴다."""
+        st = self.states.get("USDKRW=X")
+        return st.price if st and st.price else None
+
+    def poll_krw_swap(self) -> None:
+        """원화 FX 스왑포인트 · IRS · CRS (서울외국환중개) — krw_swap.py."""
+        try:
+            points = krw_swap.fetch_swap_points(self._usdkrw_spot())
+            curves = krw_swap.fetch_irs_crs()
+        except Exception:
+            log.exception("poll_krw_swap failed — keeping last known swaps")
+            return
+        if points:
+            self.swap_points = points
+        if curves:
+            self.irs_crs = curves
+        if not points and not curves:
+            log.warning("poll_krw_swap returned nothing — keeping last known swaps")
 
     def poll_bond_quotes(self) -> None:
         """지표종목 최종호가수익률 (KOFIA) — bond_quotes.py."""
@@ -991,6 +1014,83 @@ class MarketData:
                 "stale": self.bond_curve_stale,
             }
 
+        # -- 원화 스왑 (스왑포인트 · IRS/CRS · 국고채-IRS) ---------------
+        # 금리·연율은 레벨이라 색을 안 입힌다. 부호가 뜻을 갖는 두 값만
+        # 색을 준다 — 통화베이시스(CRS-IRS)와 국고채-IRS 스프레드.
+        def _fmt_pt(v):
+            return f"{v:,.0f}" if v is not None else "—"
+
+        def _fmt_ann(v):
+            return f"{v:+.2f}%" if v is not None else "—"
+
+        swap_rows = None
+        if self.swap_points:
+            sp = self.swap_points
+            swap_rows = {
+                "asOf": sp["asOf"],
+                "spot": f"{sp['spot']:,.2f}" if sp["spot"] else "—",
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "smbs": {
+                            "bid": _fmt_pt(r["smbs"]["bid"]),
+                            "offer": _fmt_pt(r["smbs"]["offer"]),
+                            "annualized": _fmt_ann(r["smbs"]["annualized"]),
+                        },
+                        "kmb": {
+                            "bid": _fmt_pt(r["kmb"]["bid"]),
+                            "offer": _fmt_pt(r["kmb"]["offer"]),
+                            "annualized": _fmt_ann(r["kmb"]["annualized"]),
+                        },
+                    }
+                    for r in sp["rows"]
+                ],
+            }
+
+        irs_crs_rows = None
+        if self.irs_crs:
+            ic = self.irs_crs
+            irs_crs_rows = {
+                "asOf": ic["asOf"],
+                "source": ic.get("source", ""),
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "irs": f"{r['irs']:.3f}" if r["irs"] is not None else "—",
+                        "crs": f"{r['crs']:.3f}" if r["crs"] is not None else "—",
+                        "basis": f"{r['basisBp']:+d}bp" if r["basisBp"] is not None else "—",
+                        "basisColor": (
+                            flat if not r["basisBp"] else up if r["basisBp"] > 0 else down
+                        ),
+                    }
+                    for r in ic["rows"]
+                ],
+            }
+
+        # 국고채(현물) - IRS 스프레드. 국고채는 KOFIA 최종호가(bond_quotes),
+        # IRS 는 위 커브 — 겹치는 만기(1Y/3Y/5Y/10Y)만 계산한다.
+        bond_irs_rows = None
+        if self.bond_quotes and self.irs_crs:
+            ktb = {r["label"]: r["yield"] for r in self.bond_quotes["rows"]}
+            irs_by_term = {r["label"]: r["irs"] for r in self.irs_crs["rows"]}
+            pairs = [("1Y", "국고채권(1년)"), ("3Y", "국고채권(3년)"),
+                     ("5Y", "국고채권(5년)"), ("10Y", "국고채권(10년)")]
+            rows_ = []
+            for term, ktb_label in pairs:
+                b, i = ktb.get(ktb_label), irs_by_term.get(term)
+                if b is None or i is None:
+                    continue
+                spread_bp = round((b - i) * 100, 1)
+                rows_.append({
+                    "label": term,
+                    "ktb": f"{b:.3f}",
+                    "irs": f"{i:.3f}",
+                    "spread": f"{spread_bp:+.1f}bp",
+                    "spreadColor": flat if not spread_bp else up if spread_bp > 0 else down,
+                })
+            if rows_:
+                bond_irs_rows = {"rows": rows_}
+
         # -- 지표종목 최종호가수익률 ------------------------------------
         # 금리 레벨 자체는 방향이 없으니 색을 안 입히고, 전일대비만 색을
         # 준다. 금리 상승은 채권 약세라 KR 스킴의 up(빨강)과 뜻이 다르므로
@@ -1140,4 +1240,7 @@ class MarketData:
             "bondFlowPeriods": bond_flow.PERIODS,
             "bondQuotes": bond_quote_rows,
             "shortTermRates": short_term_rows,
+            "swapPoints": swap_rows,
+            "irsCrs": irs_crs_rows,
+            "bondIrs": bond_irs_rows,
         }

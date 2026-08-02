@@ -184,6 +184,7 @@ async def _daily_sources_loop() -> None:
             await asyncio.to_thread(market.poll_bond_flow)
             await asyncio.to_thread(market.poll_bond_quotes)
             await asyncio.to_thread(market.poll_short_term_rates)
+            await asyncio.to_thread(market.poll_krw_swap)
         except Exception:
             log.exception("daily sources loop iteration failed")
         await asyncio.sleep(DAILY_SOURCES_POLL_SECONDS)
@@ -213,6 +214,8 @@ async def startup() -> None:
     # 베이시스 이론가는 CD(91일)를 조달금리로 쓰므로 kr_rates 다음에 받는다.
     # 첫 스냅샷부터 대체값이 아닌 실제 고시금리가 들어가게 하려는 것.
     await asyncio.to_thread(market.poll_basis)
+    # 스왑포인트 연율은 현물 USD/KRW 를 분모로 쓰므로 price poll 다음에 받는다.
+    await asyncio.to_thread(market.poll_krw_swap)
     # Warm the stock-name index (substring search) in the background —
     # not worth delaying first paint for.
     naver_search.refresh_index()
