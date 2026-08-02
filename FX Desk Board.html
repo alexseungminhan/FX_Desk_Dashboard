@@ -40,6 +40,25 @@
   .bs-stat b{font-size:14.5px;font-weight:500}
   /* 채권 수급은 "자산운용(공모)" 처럼 라벨이 길어 첫 열을 넓게 잡는다 */
   .bflow-row{grid-template-columns:110px repeat(4,1fr)}
+  /* 좁은 화면에서 넓은 표·차트를 찌그러뜨리는 대신 가로로 밀어서 본다.
+     안쪽 min-width 는 "이보다 좁아지면 못 읽는다" 는 하한이고, 데스크톱
+     패널 폭(약 1,140px)보다 작아서 넓은 화면에서는 걸리지 않는다. */
+  /* grid·flex 자식은 기본이 min-width:auto 라 내용이 넓으면 칸 자체가
+     늘어난다. 이걸 안 풀면 아래 .scroll-x 가 스크롤을 못 하고 패널이
+     통째로 넓어져 페이지가 가로로 밀린다. */
+  .blueprint,.scroll-x{min-width:0}
+  .scroll-x{overflow-x:auto;overscroll-behavior-x:contain}
+  /* 탭이 많은 세그먼트(채권종류 9개·커브 7개)도 같은 이유로 넘친다 */
+  .seg-nowrap{overflow-x:auto;max-width:100%}
+  #flow-table,#bflow-table{min-width:660px}
+  /* 막대 차트는 표보다 넉넉히 잡는다 — 11개 주체 라벨과 값이 겹치지 않고
+     읽히는 하한이 이 정도다. 좁은 화면에서는 그만큼 옆으로 밀어서 본다. */
+  #flow-chart,#bflow-chart{min-width:1000px}
+  #quotes-list{min-width:700px}
+  #curve-table{min-width:900px}
+  #curve-chart{min-width:860px}
+  #strate-table{min-width:780px}
+  #fxbond-list{min-width:840px}
   /* 탭이 좁은 패널에서 글자 단위로 접히지 않게 — 줄바꿈 대신 한 줄 유지 */
   .seg-nowrap .seg-opt span{white-space:nowrap}
   /* 채권 커브: 종류(행) × 만기(열). 국고채 행만 굵게 세워 기준선을 만든다 */
@@ -86,10 +105,8 @@
     .nav{flex-wrap:wrap;padding:10px 14px !important;gap:6px 14px !important}
     #fx-regions,#idx-main{grid-template-columns:1fr !important}
     .panel-head{flex-wrap:wrap;gap:6px}
-    /* 수급 표는 4개 기간이 다 들어가면 좁은 화면에서 넘친다 — 가로 스크롤
-       대신 라벨 폭과 글자를 줄여 한 화면에 유지한다. */
-    .flow-row{grid-template-columns:52px repeat(4,1fr);gap:4px}
-    .flow-name,.flow-val{font-size:11px}
+    /* 넓은 표·차트는 글자를 줄여 욱여넣지 않는다 — .scroll-x 가 가로
+       스크롤을 맡고, 안쪽은 min-width 로 읽을 수 있는 크기를 지킨다. */
     #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
     /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을
        자동 확대해서, 검색 후 열리는 팝업이 줌인된 채로 보인다. */
@@ -229,7 +246,7 @@
               <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-futures"><span>선물</span></label>
             </div>
           </div>
-          <div id="flow-table"></div>
+          <div class="scroll-x"><div id="flow-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
             <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:#98989b;font-weight:400" id="flow-chart-period"></span></h5>
             <div class="seg" style="height:26px">
@@ -239,7 +256,7 @@
               <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-3m"><span>3개월</span></label>
             </div>
           </div>
-          <div id="flow-chart"></div>
+          <div class="scroll-x"><div id="flow-chart"></div></div>
           <div id="flow-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
         </div>
     </div>
@@ -251,7 +268,7 @@
             <h4 style="margin:0">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
             <div class="seg seg-nowrap" id="bflow-seg" style="height:28px"></div>
           </div>
-          <div id="bflow-table"></div>
+          <div class="scroll-x"><div id="bflow-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
             <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:#98989b;font-weight:400" id="bflow-chart-label"></span></h5>
             <div class="seg" style="height:26px">
@@ -261,7 +278,7 @@
               <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-3m"><span>3개월</span></label>
             </div>
           </div>
-          <div id="bflow-chart"></div>
+          <div class="scroll-x"><div id="bflow-chart"></div></div>
           <div id="bflow-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
         </div>
 
@@ -272,14 +289,14 @@
             <span id="curve-asof" class="mono" style="font-size:11px;color:#98989b"></span>
           </div>
           <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">지표종목 최종호가 <span style="color:#98989b;font-weight:400" id="quotes-asof"></span></h5>
-          <div id="quotes-list"></div>
+          <div class="scroll-x"><div id="quotes-list"></div></div>
           <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">종류별 만기수익률</h5>
-          <div id="curve-table"></div>
+          <div class="scroll-x"><div id="curve-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
             <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">만기별 곡선 <span style="color:#98989b;font-weight:400" id="curve-chart-label"></span></h5>
             <div class="seg seg-nowrap" id="curve-seg" style="height:26px"></div>
           </div>
-          <div id="curve-chart"></div>
+          <div class="scroll-x"><div id="curve-chart"></div></div>
           <div id="curve-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
         </div>
 
@@ -289,7 +306,7 @@
             <h4 style="margin:0">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
             <span id="strate-asof" class="mono" style="font-size:11px;color:#98989b"></span>
           </div>
-          <div id="strate-table"></div>
+          <div class="scroll-x"><div id="strate-table"></div></div>
           <div id="strate-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
         </div>
 
@@ -299,7 +316,7 @@
             <h4 style="margin:0">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
             <span id="fxbond-count" class="mono" style="font-size:11px;color:#98989b"></span>
           </div>
-          <div id="fxbond-list"></div>
+          <div class="scroll-x"><div id="fxbond-list"></div></div>
           <div id="fxbond-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
         </div>
 

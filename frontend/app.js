@@ -307,7 +307,10 @@
     const box = $("flow-chart");
     const cells = (data.periods[flowChartPeriod] || []).filter((c) => c.chart);
     const period = periods.find((p) => p.key === flowChartPeriod);
-    $("flow-chart-period").textContent = period ? `· ${period.label} 누적` : "";
+    // 선물은 금액이 아니라 계약 수라 단위를 막대 바로 옆에 붙여둔다 —
+    // 억원 표를 보다 넘어오면 같은 단위로 착각하기 쉽다.
+    $("flow-chart-period").textContent = period
+      ? `· ${period.label} 누적 (단위 ${data.unitLabel})` : "";
 
     if (!cells.length) { box.innerHTML = ""; flowChartKey = ""; return; }
 
@@ -364,6 +367,7 @@
 
     const head = `<div class="flow-row bflow-row flow-head"><span>투자자</span>${
       periods.map((p) => `<span>${esc(p.label)}</span>`).join("")}</div>`;
+    // 주식 수급 표와 세로로 붙어 있어서 단위를 헷갈리기 쉽다.
 
     const first = bf.periods[periods[0].key][bondFlowType] || [];
     const rows = first.map((_, i) => {
@@ -383,7 +387,8 @@
       + (bf.stale ? " · 갱신 실패(직전 값)" : "");
 
     const period = periods.find((p) => p.key === bondFlowPeriod);
-    $("bflow-chart-label").textContent = period ? `· ${bondFlowType} · ${period.label} 누적` : "";
+    $("bflow-chart-label").textContent = period
+      ? `· ${bondFlowType} · ${period.label} 누적 (단위 억원)` : "";
     const cells = bf.periods[bondFlowPeriod][bondFlowType] || [];
     if (!cells.length) { $("bflow-chart").innerHTML = ""; bondFlowChartKey = ""; return; }
 
