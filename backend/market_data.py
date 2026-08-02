@@ -21,6 +21,9 @@ import yfinance as yf
 from yfinance.data import YfData
 
 import fx_news
+import keyword_news
+import kospi200_basis
+import kr_investor_flow
 import kr_movers
 import kr_rates
 import naver_news
@@ -228,6 +231,26 @@ def _fmt_krw_value(million_won: float) -> str:
     return f"{eok:,.0f}억"
 
 
+# 프론트의 KW_NEWS_PAGE_SIZE × KW_NEWS_PAGES 와 짝을 이룬다 (app.js).
+# 화면이 안 쓰는 뒤쪽 결과까지 매 스냅샷마다 실어 보내지 않기 위한 상한.
+KEYWORD_NEWS_SNAPSHOT_LIMIT = 45
+# 환율 뉴스도 같은 3페이지 구성 (app.js 의 FX_NEWS_PAGE_SIZE × 3).
+FX_NEWS_SNAPSHOT_LIMIT = 45
+
+
+def _fmt_signed_flow(v: float, unit: str) -> str:
+    """투자자 순매수 표시. 대금(백만원)은 조/억으로 접고, 선물은 계약 수
+    그대로. 순매수/순매도는 부호가 전부라 +는 항상 붙인다."""
+    if unit == "contract":
+        return f"{v:+,.0f}" if round(v) else "0"
+    eok = v / 100  # 백만원 -> 억원
+    if abs(eok) >= 10_000:
+        return f"{eok / 10_000:+,.2f}조"
+    # 억 미만은 반올림하면 0이 되는데, 거기에 부호를 붙이면 "-0억"처럼
+    # 방향이 있는 것처럼 보인다. 0은 부호 없이 0으로 둔다.
+    return f"{eok:+,.0f}억" if round(eok) else "0억"
+
+
 def _usable_price(v) -> float | None:
     """Yahoo hands back NaN (and occasionally 0) for "no value". NaN is
     truthy and propagates silently through every %, so quote fields get
@@ -324,6 +347,11 @@ class MarketData:
         self.us_movers_stale: bool = True
         self.kr_rates: list[dict] = []
         self.kr_rates_stale: bool = True
+        self.investor_flow: dict = {}
+        self.investor_flow_stale: bool = True
+        self.keyword_news: dict = {}
+        self.basis: dict | None = None
+        self.basis_stale: bool = True
 
     def all_symbols(self) -> list[str]:
         return list(FIXED_SYMBOLS)
@@ -478,9 +506,11 @@ class MarketData:
         self.news = merged[:300]
 
     def poll_fx_news(self) -> None:
-        """환율 주요뉴스 from Naver marketindex — shown inside the FX panel."""
+        """환율 주요뉴스 from Naver marketindex — shown inside the FX panel.
+        화면이 3페이지(15건×3)를 넘기므로 그만큼 채워온다 — 이 섹션은
+        하루 20건씩만 실려서 날짜를 거슬러 올라가며 모은다 (fx_news.py)."""
         try:
-            items = fx_news.fetch_fx_news(limit=10)
+            items = fx_news.fetch_fx_news(limit=FX_NEWS_SNAPSHOT_LIMIT)
         except Exception:
             log.exception("fx news poll failed — keeping last known headlines")
             return
@@ -501,6 +531,52 @@ class MarketData:
             return
         self.kr_rates = rows
         self.kr_rates_stale = False
+
+    def _cd_rate(self) -> float | None:
+        """CD(91일) 고시금리 — 선물 이론가의 조달금리 자리에 들어간다."""
+        for r in self.kr_rates:
+            if r.get("code") == "IRR_CD91":
+                return r.get("value")
+        return None
+
+    def poll_investor_flow(self) -> None:
+        """투자자별 매매동향 (코스피·코스닥·선물) — kr_investor_flow.py."""
+        try:
+            data = kr_investor_flow.fetch_investor_flow()
+        except Exception:
+            log.exception("poll_investor_flow failed — keeping last known flows")
+            return
+        if not data:
+            log.warning("poll_investor_flow returned nothing — keeping last known flows")
+            return
+        self.investor_flow = data
+        self.investor_flow_stale = False
+
+    def poll_keyword_news(self) -> None:
+        """외화채권·M&A 등 주제별 키워드 뉴스 — keyword_news.py."""
+        try:
+            data = keyword_news.fetch_keyword_news()
+        except Exception:
+            log.exception("poll_keyword_news failed — keeping last known items")
+            return
+        # 그룹 전체가 비는 건 검색이 막혔다는 뜻이므로 직전 결과를 살린다.
+        if not any(g.get("items") for g in data.values()):
+            log.warning("poll_keyword_news returned no items — keeping last known items")
+            return
+        self.keyword_news = data
+
+    def poll_basis(self) -> None:
+        """코스피200 현·선물 베이시스 — kospi200_basis.py."""
+        try:
+            data = kospi200_basis.fetch_basis(self._cd_rate())
+        except Exception:
+            log.exception("poll_basis failed — keeping last known basis")
+            return
+        if not data:
+            log.warning("poll_basis returned nothing — keeping last known basis")
+            return
+        self.basis = data
+        self.basis_stale = False
 
     def poll_movers(self) -> None:
         """Real KOSPI+KOSDAQ top gainers/losers from Naver Finance — see
@@ -732,6 +808,100 @@ class MarketData:
             for n in self.fx_news
         ]
 
+        # -- 수급: 투자자별 순매수 -------------------------------------
+        # 순매수는 빨강(up), 순매도는 파랑(down) — 보드의 다른 KR 패널과
+        # 같은 색 규칙을 그대로 쓴다.
+        # 네이버 표의 컬럼 순서 그대로 — 원본과 나란히 놓고 검증하기 쉽다.
+        # 기관계는 그 아래 6개 주체의 합이라, 막대로 같이 그리면 이중 계상이
+        # 된다. chart 플래그로 표에는 남기고 차트에서만 뺀다.
+        INVESTORS = [
+            ("individual", "개인", True), ("foreign", "외국인", True),
+            ("institution", "기관계", False),
+            ("financial", "금융투자", True), ("insurance", "보험", True),
+            ("trust", "투신", True), ("bank", "은행", True),
+            ("otherFinance", "기타금융", True), ("pension", "연기금", True),
+            ("corporate", "기타법인", True),
+        ]
+
+        def flow_market(data: dict) -> dict:
+            unit = data["unit"]
+            periods = {}
+            for p in kr_investor_flow.PERIODS:
+                vals = data["periods"][p["key"]]
+                periods[p["key"]] = [
+                    {
+                        "key": key,
+                        "label": label,
+                        "value": _fmt_signed_flow(vals[key], unit),
+                        # 차트는 스케일을 직접 잡아야 해서 원본 수치도 같이 내린다.
+                        "raw": vals[key],
+                        "chart": in_chart,
+                        "color": up if vals[key] > 0 else down if vals[key] < 0 else flat,
+                    }
+                    for key, label, in_chart in INVESTORS
+                ]
+            return {
+                "label": data["label"],
+                "unitLabel": "계약" if unit == "contract" else "원",
+                "asOf": data["asOf"],
+                "days": data["days"],
+                "periods": periods,
+                "stale": self.investor_flow_stale,
+            }
+
+        investor_flow = {k: flow_market(v) for k, v in self.investor_flow.items()}
+
+        # -- 현·선물 베이시스 ------------------------------------------
+        basis = None
+        if self.basis:
+            b = self.basis
+            basis = {
+                "spot": f"{b['spot']:,.2f}",
+                "futures": f"{b['futures']:,.2f}",
+                "contract": b["contract"],
+                "expiry": b["expiry"],
+                "daysToExpiry": b["daysToExpiry"],
+                "basis": f"{b['basis']:+,.2f}",
+                "basisColor": up if b["basis"] > 0 else down if b["basis"] < 0 else flat,
+                "state": b["state"],
+                "theoretical": f"{b['theoretical']:,.2f}" if b["theoretical"] is not None else "—",
+                "theoBasis": f"{b['theoBasis']:+,.2f}" if b["theoBasis"] is not None else "—",
+                "spread": f"{b['spread']:+.2f}%" if b["spread"] is not None else "—",
+                "spreadColor": (
+                    flat if b["spread"] is None
+                    else up if b["spread"] > 0 else down if b["spread"] < 0 else flat
+                ),
+                "valuation": b["valuation"] or "—",
+                "assumption": (
+                    f"조달금리 CD91 {b['rate']:.2f}%"
+                    + ("(대체값)" if b["rateIsFallback"] else "")
+                    + f" · 배당수익률 {b['dividendYield']:.1f}% 가정"
+                ),
+                "stamp": b["stamp"],
+                "stale": self.basis_stale,
+            }
+
+        # -- 키워드 뉴스 -----------------------------------------------
+        # 스냅샷은 10초마다 접속자 전원에게 통째로 나간다. 화면은 그룹당
+        # 3페이지(45건)까지만 보여주므로 M&A처럼 150건 가까이 잡히는
+        # 그룹을 다 실어 보내면 매 틱마다 버리는 데이터를 나르게 된다.
+        keyword_news_rows = {
+            key: {
+                "label": g["label"],
+                "items": [
+                    {
+                        "when": it["when"] or "—",
+                        "headline": it["title"],
+                        "press": it["press"],
+                        "hit": it["hit"],
+                        "url": it["url"],
+                    }
+                    for it in g["items"][:KEYWORD_NEWS_SNAPSHOT_LIMIT]
+                ],
+            }
+            for key, g in self.keyword_news.items()
+        }
+
         return {
             "asOf": self.last_snapshot_at.isoformat() if self.last_snapshot_at else None,
             "moversAsOf": self.movers_updated_at.isoformat() if self.movers_updated_at else None,
@@ -750,4 +920,8 @@ class MarketData:
             "krRates": kr_rates_rows,
             "fxNews": fx_news_rows,
             "news": news,
+            "investorFlow": investor_flow,
+            "investorFlowPeriods": kr_investor_flow.PERIODS,
+            "basis": basis,
+            "keywordNews": keyword_news_rows,
         }

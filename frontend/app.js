@@ -10,7 +10,21 @@
   let usMoversTab = "gainers";
   let newsKeywords = [];
   let newsPage = 1;
+  let flowMarket = "kospi";
+  let flowChartPeriod = "1d";
+  let kwNewsGroup = "fxbond";
+  let kwNewsPage = 1;
+  // 환율 뉴스는 스냅샷이 아니라 여기 붙들어 둔다 — 페이저를 눌렀을 때
+  // 스냅샷을 기다리지 않고 바로 그 자리에서 다시 그리기 위해서다.
+  let fxNewsRows = null;
+  let fxNewsPage = 1;
   const NEWS_PAGE_SIZE = 20;
+  const KW_NEWS_PAGE_SIZE = 15, KW_NEWS_PAGES = 3;
+  const FX_NEWS_PAGE_SIZE = 15;
+  // 기관계 아래로 들여쓸 세부 주체 — 합계와 구성요소를 눈으로 구분한다.
+  const FLOW_SUB_ROWS = new Set([
+    "financial", "insurance", "trust", "bank", "otherFinance", "pension",
+  ]);
 
   const $ = (id) => document.getElementById(id);
 
@@ -142,8 +156,14 @@
   }
 
   function renderFxNews(rows) {
-    if (!rows) return;
-    $("fx-news-list").innerHTML = rows.map((n) => `
+    if (rows) fxNewsRows = rows;
+    if (!fxNewsRows) return;
+
+    const totalPages = Math.max(1, Math.ceil(fxNewsRows.length / FX_NEWS_PAGE_SIZE));
+    if (fxNewsPage > totalPages) fxNewsPage = totalPages;
+    const start = (fxNewsPage - 1) * FX_NEWS_PAGE_SIZE;
+
+    $("fx-news-list").innerHTML = fxNewsRows.slice(start, start + FX_NEWS_PAGE_SIZE).map((n) => `
       <div style="display:flex;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06)">
         <span class="mono" style="font-size:10.5px;color:#98989b;min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
         <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
@@ -151,6 +171,214 @@
           <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
         </div>
       </div>`).join("");
+
+    renderPagination("fx-news-pagination", fxNewsPage, totalPages, (p) => {
+      fxNewsPage = p;
+      renderFxNews();
+    });
+  }
+
+  // -- 수급: 투자자(행) × 기간(열) -------------------------------------
+
+  function renderInvestorFlow() {
+    if (!latest) return;
+    const flow = latest.investorFlow || {};
+    const periods = latest.investorFlowPeriods || [];
+    const data = flow[flowMarket];
+    const table = $("flow-table");
+    const foot = $("flow-foot");
+
+    if (!data || !periods.length) {
+      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">수급 데이터를 불러오지 못했습니다.</div>`;
+      foot.textContent = "";
+      return;
+    }
+
+    const head = `
+      <div class="flow-row flow-head">
+        <span>투자자</span>${periods.map((p) => `<span>${esc(p.label)}</span>`).join("")}
+      </div>`;
+
+    // 기간별 배열은 모두 같은 투자자 순서라 첫 기간을 기준으로 행을 편다.
+    const rows = data.periods[periods[0].key].map((_, i) => {
+      const first = data.periods[periods[0].key][i];
+      const cells = periods.map((p) => {
+        const cell = data.periods[p.key][i];
+        return `<span class="mono flow-val" style="color:${cell.color}">${esc(cell.value)}</span>`;
+      }).join("");
+      return `
+        <div class="flow-row${FLOW_SUB_ROWS.has(first.key) ? " flow-sub" : ""}">
+          <span class="flow-name">${esc(first.label)}</span>${cells}
+        </div>`;
+    }).join("");
+
+    table.innerHTML = head + rows;
+    foot.textContent = `${data.asOf} 기준 · 단위 ${data.unitLabel} · 최근 ${data.days}영업일 누적`
+      + (data.stale ? " · 갱신 실패(직전 값)" : "");
+    renderFlowChart(data, periods);
+  }
+
+  // -- 수급 차트: 주체별 순매수 막대 ------------------------------------
+  // 색은 부호(순매수/순매도)만 나타내는 diverging 인코딩이고, 보드가 이미
+  // 쓰는 상승 빨강 / 하락 파랑 짝을 그대로 받는다(서버가 스킴별로 내려줌).
+  // 색만으로 의미를 나르지 않도록 막대마다 부호 붙은 숫자를 함께 찍는다.
+
+  const FLOW_W = 1120, FLOW_H = 264;
+  const FLOW_PAD = { l: 64, r: 14, t: 26, b: 42 };
+
+  // 축 눈금용 — 서버의 _fmt_signed_flow 와 같은 규칙(백만원 -> 억/조).
+  function flowAxisLabel(v, unitLabel) {
+    if (v === 0) return "0";   // 조 눈금 사이에 "0억"이 끼면 단위가 뒤섞여 보인다
+    if (unitLabel === "계약") return v.toLocaleString("en-US");
+    const eok = v / 100;
+    return Math.abs(eok) >= 10000
+      ? `${(eok / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
+      : `${Math.round(eok).toLocaleString("en-US")}억`;
+  }
+
+  // 1 / 2 / 2.5 / 5 × 10^k 중 v 이상인 첫 값 — 눈금이 읽기 좋은 수로 떨어진다.
+  function niceStep(v) {
+    if (v <= 0) return 1;
+    const exp = Math.floor(Math.log10(v));
+    const base = Math.pow(10, exp);
+    for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * base) return m * base;
+    return 10 * base;
+  }
+
+  let flowChartKey = "";   // 마지막으로 그린 차트의 데이터 서명
+
+  function renderFlowChart(data, periods) {
+    const box = $("flow-chart");
+    const cells = (data.periods[flowChartPeriod] || []).filter((c) => c.chart);
+    const period = periods.find((p) => p.key === flowChartPeriod);
+    $("flow-chart-period").textContent = period ? `· ${period.label} 누적` : "";
+
+    if (!cells.length) { box.innerHTML = ""; flowChartKey = ""; return; }
+
+    // 스냅샷은 10초마다 오지만 수급 원본은 5분마다 갱신된다. 값이 그대로면
+    // SVG를 다시 만들지 않는다 — 매번 새로 그리면 눈에 띄게 깜빡인다.
+    const key = `${data.label}|${flowChartPeriod}|${cells.map((c) => c.raw).join(",")}`;
+    if (key === flowChartKey) return;
+    flowChartKey = key;
+
+    const step = niceStep(Math.max(...cells.map((c) => Math.abs(c.raw))) / 2) || 1;
+    const max = step * 2;                       // 위아래 각 2칸 = 눈금선 5줄
+    const x0 = FLOW_PAD.l, x1 = FLOW_W - FLOW_PAD.r;
+    const y0 = FLOW_PAD.t, y1 = FLOW_H - FLOW_PAD.b;
+    const zeroY = (y0 + y1) / 2;
+    const half = (y1 - y0) / 2;
+    const yFor = (v) => zeroY - (v / max) * half;
+
+    const band = (x1 - x0) / cells.length;
+    const barW = Math.min(24, band * 0.44);     // 슬롯을 채우지 않고 여백을 남긴다
+
+    // 눈금선은 한 단계 옅은 회색 실선 1px — 데이터보다 뒤로 물러나야 한다.
+    let grid = "";
+    for (let i = -2; i <= 2; i++) {
+      const v = step * i;
+      const y = yFor(v);
+      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${i === 0 ? "#b9b9bc" : "#dedee0"}" stroke-width="1"/>`
+        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${esc(flowAxisLabel(v, data.unitLabel))}</text>`;
+    }
+
+    const marks = cells.map((c, i) => {
+      const cx = x0 + band * (i + 0.5);
+      const x = cx - barW / 2;
+      const yv = yFor(c.raw);
+      const h = Math.abs(yv - zeroY);
+      const r = Math.min(4, h);                 // 막대가 4px보다 얇으면 라운드를 줄인다
+      const up = c.raw >= 0;
+      // 데이터 끝은 4px 라운드, 기준선 쪽은 각지게.
+      const path = up
+        ? `M${x} ${zeroY} V${yv + r} Q${x} ${yv} ${x + r} ${yv} H${x + barW - r} Q${x + barW} ${yv} ${x + barW} ${yv + r} V${zeroY} Z`
+        : `M${x} ${zeroY} V${yv - r} Q${x} ${yv} ${x + r} ${yv} H${x + barW - r} Q${x + barW} ${yv} ${x + barW} ${yv - r} V${zeroY} Z`;
+      const labelY = up ? yv - 7 : yv + 15;
+      return `
+        <g>
+          <title>${esc(c.label)} ${esc(c.value)}</title>
+          <rect x="${cx - band / 2}" y="${y0}" width="${band}" height="${y1 - y0}" fill="transparent"/>
+          ${h < 0.5 ? "" : `<path d="${path}" fill="${c.color}"/>`}
+          <text x="${cx}" y="${labelY}" text-anchor="middle" font-size="11" font-weight="500" fill="${c.color}">${esc(c.value)}</text>
+          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="11" fill="#5d5d60">${esc(c.label)}</text>
+        </g>`;
+    }).join("");
+
+    box.innerHTML = `
+      <svg viewBox="0 0 ${FLOW_W} ${FLOW_H}" width="100%" height="${FLOW_H}"
+           preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="${esc(data.label)} 주체별 순매수">
+        ${grid}${marks}
+      </svg>`;
+  }
+
+  // -- 코스피200 현·선물 베이시스 ---------------------------------------
+
+  function renderBasis() {
+    if (!latest) return;
+    const b = latest.basis;
+    const body = $("basis-body");
+    const foot = $("basis-foot");
+
+    if (!b) {
+      body.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">베이시스를 불러오지 못했습니다.</div>`;
+      foot.textContent = "";
+      return;
+    }
+
+    const row = (label, value, color) =>
+      `<div class="bs-row"><span>${esc(label)}</span><span class="mono" ${color ? `style="color:${color}"` : ""}>${esc(value)}</span></div>`;
+
+    body.innerHTML = `
+      <div class="bs-big">
+        <b class="mono" style="color:${b.basisColor}">${esc(b.basis)}</b>
+        <span class="bs-tag" style="color:${b.basisColor}">${esc(b.state)}</span>
+        <span style="font-size:11px;color:#98989b;margin-left:auto">베이시스 (선물−현물)</span>
+      </div>
+      ${row("현물 KOSPI200", b.spot)}
+      ${row("선물 " + (b.contract ? `(${b.contract})` : ""), b.futures)}
+      ${row("이론가", b.theoretical)}
+      ${row("이론 베이시스", b.theoBasis)}
+      ${row("괴리율", `${b.spread} · ${b.valuation}`, b.spreadColor)}
+      ${row("만기까지", b.daysToExpiry != null ? `${b.daysToExpiry}일 (${b.expiry})` : "—")}`;
+
+    foot.textContent = `${b.stamp}\n${b.assumption}`;
+  }
+
+  // -- 키워드 뉴스 -------------------------------------------------------
+
+  function renderKeywordNews() {
+    if (!latest) return;
+    const groups = latest.keywordNews || {};
+    const group = groups[kwNewsGroup];
+    const items = (group && group.items) || [];
+
+    // 관련도순 상위 KW_NEWS_PAGES 페이지까지만 노출한다. 뒤로 갈수록
+    // 주제와 멀어지는 목록이라 끝까지 넘기게 두는 게 의미가 없다.
+    const pool = items.slice(0, KW_NEWS_PAGE_SIZE * KW_NEWS_PAGES);
+    const totalPages = Math.max(1, Math.ceil(pool.length / KW_NEWS_PAGE_SIZE));
+    if (kwNewsPage > totalPages) kwNewsPage = totalPages;
+    const start = (kwNewsPage - 1) * KW_NEWS_PAGE_SIZE;
+    const shown = pool.slice(start, start + KW_NEWS_PAGE_SIZE);
+
+    // 검색어가 하나뿐인 그룹은 모든 줄에 같은 태그가 붙어 정보가 없다.
+    // 검색어가 섞인 그룹(M&A = M&A + 인수합병)에서만 어느 쪽에 걸렸는지 표시.
+    const showHit = new Set(shown.map((n) => n.hit)).size > 1;
+
+    $("kwnews-empty").style.display = items.length ? "none" : "block";
+    $("kwnews-list").innerHTML = shown.map((n) => `
+      <div class="kwn-row">
+        <span class="mono kwn-when">${esc(n.when)}</span>
+        <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
+          <a href="${esc(n.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>
+          ${showHit ? `<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.hit)}</span>` : ""}
+          ${n.press ? `<span style="font-size:10.5px;color:#98989b;margin-left:5px">${esc(n.press)}</span>` : ""}
+        </div>
+      </div>`).join("");
+
+    renderPagination("kwnews-pagination", kwNewsPage, totalPages, (p) => {
+      kwNewsPage = p;
+      renderKeywordNews();
+    });
   }
 
   // Clicking any stock row (movers lists) opens the detail popup.
@@ -201,25 +429,26 @@
     });
   }
 
-  function renderNewsPagination(totalPages) {
-    const box = $("news-pagination");
+  // 번호 페이저 — 주요 뉴스와 키워드 뉴스가 같이 쓴다. onPick 은 고른
+  // 페이지 번호를 받아 해당 패널을 다시 그린다.
+  function renderPagination(boxId, current, totalPages, onPick) {
+    const box = $(boxId);
     if (totalPages <= 1) { box.innerHTML = ""; box.style.display = "none"; return; }
     box.style.display = "flex";
     const btn = (label, page, opts = {}) => `
       <button type="button" data-page="${page}" ${opts.disabled ? "disabled" : ""}
-        style="min-width:26px;padding:4px 8px;font-size:11.5px;border:1px solid var(--color-divider);background:${page === newsPage ? "var(--color-accent)" : "transparent"};color:${page === newsPage ? "#fff" : "inherit"};cursor:${opts.disabled ? "default" : "pointer"}">${label}</button>`;
+        style="min-width:26px;padding:4px 8px;font-size:11.5px;border:1px solid var(--color-divider);background:${page === current ? "var(--color-accent)" : "transparent"};color:${page === current ? "#fff" : "inherit"};cursor:${opts.disabled ? "default" : "pointer"}">${label}</button>`;
 
     let pages = [];
     for (let p = 1; p <= totalPages; p++) pages.push(p);
-    box.innerHTML = btn("‹", Math.max(1, newsPage - 1), { disabled: newsPage === 1 })
+    box.innerHTML = btn("‹", Math.max(1, current - 1), { disabled: current === 1 })
       + pages.map((p) => btn(p, p)).join("")
-      + btn("›", Math.min(totalPages, newsPage + 1), { disabled: newsPage === totalPages });
+      + btn("›", Math.min(totalPages, current + 1), { disabled: current === totalPages });
 
     box.querySelectorAll("[data-page]").forEach((el) => {
       el.addEventListener("click", () => {
         if (el.disabled) return;
-        newsPage = Number(el.dataset.page);
-        renderNews();
+        onPick(Number(el.dataset.page));
       });
     });
   }
@@ -241,7 +470,7 @@
       </div>`).join("");
 
     $("news-empty").style.display = (latest && latest.news && latest.news.length > 0 && all.length === 0) ? "block" : "none";
-    renderNewsPagination(totalPages);
+    renderPagination("news-pagination", newsPage, totalPages, (p) => { newsPage = p; renderNews(); });
     $("news-count").textContent = latest && latest.news ? `총 ${latest.news.length}건` : "";
   }
 
@@ -276,6 +505,9 @@
     renderKrRates(snapshot.krRates);
     renderFxNews(snapshot.fxNews);
     renderNews();
+    renderInvestorFlow();
+    renderBasis();
+    renderKeywordNews();
     if (snapshot.asOf) {
       const d = new Date(snapshot.asOf);
       $("as-of").textContent = d.toLocaleTimeString("ko-KR", { hour12: false });
@@ -288,6 +520,20 @@
   $("mv-losers").addEventListener("change", () => { moversTab = "losers"; renderMovers(); });
   $("usmv-gainers").addEventListener("change", () => { usMoversTab = "gainers"; renderUsMovers(); });
   $("usmv-losers").addEventListener("change", () => { usMoversTab = "losers"; renderUsMovers(); });
+
+  for (const market of ["kospi", "kosdaq", "futures"]) {
+    $(`flow-${market}`).addEventListener("change", () => { flowMarket = market; renderInvestorFlow(); });
+  }
+  for (const period of ["1d", "1w", "1m", "3m"]) {
+    $(`flowp-${period}`).addEventListener("change", () => { flowChartPeriod = period; renderInvestorFlow(); });
+  }
+  for (const group of ["fxbond", "ma", "blockdeal", "dividend"]) {
+    $(`kwn-${group}`).addEventListener("change", () => {
+      kwNewsGroup = group;
+      kwNewsPage = 1;   // 탭을 바꾸면 3페이지째에 머물러 있을 이유가 없다
+      renderKeywordNews();
+    });
+  }
 
   // -- global search (header): 지표 + 종목 통합 검색 --------------------
 

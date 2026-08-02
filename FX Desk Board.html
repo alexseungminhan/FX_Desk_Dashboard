@@ -20,6 +20,27 @@
   .mt-vol{font-size:12px;text-align:right;min-width:64px;color:#1d1f20;font-weight:500}
   /* ETF·ETN은 개별종목과 나란히 랭킹되므로 이름 옆에 종류를 표시한다 */
   .mv-tag{font-size:9.5px;font-weight:600;letter-spacing:.04em;color:#7a7a7d;border:1px solid rgba(29,31,32,.18);padding:0 3px;margin-left:5px;vertical-align:1px}
+  /* 수급: 투자자(행) × 기간(열) 표 */
+  .flow-row{display:grid;grid-template-columns:64px repeat(4,1fr);gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .flow-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px}
+  .flow-head span{font-size:10.5px;color:#98989b;text-align:right;letter-spacing:.06em}
+  .flow-head span:first-child{text-align:left}
+  .flow-name{font-size:12px;font-weight:500;white-space:nowrap}
+  .flow-val{font-size:12px;text-align:right}
+  /* 기관 세부(금융투자·투신·연기금…)는 기관계 하위 항목이라 들여쓴다 */
+  .flow-sub .flow-name{padding-left:9px;font-weight:400;color:#5d5d60}
+  .flow-sub{border-bottom-color:rgba(29,31,32,.03)}
+  /* 베이시스 */
+  .bs-row{display:flex;align-items:baseline;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12.5px}
+  .bs-row span:first-child{color:#5d5d60}
+  .bs-big{display:flex;align-items:baseline;gap:10px;padding:2px 0 10px}
+  .bs-big b{font-size:23px;font-weight:500;letter-spacing:-.01em}
+  .bs-tag{font-size:10px;font-weight:600;letter-spacing:.06em;border:1px solid currentColor;padding:1px 6px}
+  /* 탭이 좁은 패널에서 글자 단위로 접히지 않게 — 줄바꿈 대신 한 줄 유지 */
+  .seg-nowrap .seg-opt span{white-space:nowrap}
+  /* 키워드 뉴스 */
+  .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06);align-items:baseline}
+  .kwn-when{font-size:10.5px;color:#98989b;white-space:nowrap}
   .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
   .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 8px;border:1px solid var(--color-accent);color:var(--color-accent);background:rgba(89,128,166,.08);letter-spacing:.02em}
   .kw-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0}
@@ -38,6 +59,10 @@
     .nav{flex-wrap:wrap;padding:10px 14px !important;gap:6px 14px !important}
     #fx-regions,#idx-main{grid-template-columns:1fr !important}
     .panel-head{flex-wrap:wrap;gap:6px}
+    /* 수급 표는 4개 기간이 다 들어가면 좁은 화면에서 넘친다 — 가로 스크롤
+       대신 라벨 폭과 글자를 줄여 한 화면에 유지한다. */
+    .flow-row{grid-template-columns:52px repeat(4,1fr);gap:4px}
+    .flow-name,.flow-val{font-size:11px}
     #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
     /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을
        자동 확대해서, 검색 후 열리는 팝업이 줌인된 채로 보인다. */
@@ -81,6 +106,7 @@
       <div style="margin-top:14px;border-top:1px solid var(--color-divider);padding-top:10px">
         <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:4px">환율 주요 뉴스 <span style="color:#98989b;letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
         <div id="fx-news-list"></div>
+        <div id="fx-news-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
       </div>
     </div>
 
@@ -162,6 +188,56 @@
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
           <div id="us-most-active-list"></div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Investor Net Buy · 네이버 증권</span></h4>
+            <div class="seg" style="height:28px">
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kospi" checked><span>코스피</span></label>
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kosdaq"><span>코스닥</span></label>
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-futures"><span>선물</span></label>
+            </div>
+          </div>
+          <div id="flow-table"></div>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:#98989b;font-weight:400" id="flow-chart-period"></span></h5>
+            <div class="seg" style="height:26px">
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1d" checked><span>1일</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1w"><span>1주</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1m"><span>1개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-3m"><span>3개월</span></label>
+            </div>
+          </div>
+          <div id="flow-chart"></div>
+          <div id="flow-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px"></div>
+        </div>
+    </div>
+
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0;white-space:nowrap">키워드 뉴스 <span class="kop" style="font-size:11px">Keyword News · 관련도순</span></h4>
+            <div class="seg seg-nowrap" style="height:28px">
+              <label class="seg-opt" style="padding:4px 9px;font-size:11.5px"><input type="radio" name="kwn" id="kwn-fxbond" checked><span>외화채권</span></label>
+              <label class="seg-opt" style="padding:4px 9px;font-size:11.5px"><input type="radio" name="kwn" id="kwn-ma"><span>M&amp;A</span></label>
+              <label class="seg-opt" style="padding:4px 9px;font-size:11.5px"><input type="radio" name="kwn" id="kwn-blockdeal"><span>블록딜</span></label>
+              <label class="seg-opt" style="padding:4px 9px;font-size:11.5px"><input type="radio" name="kwn" id="kwn-dividend"><span>배당</span></label>
+            </div>
+          </div>
+          <div id="kwnews-list"></div>
+          <div id="kwnews-empty" style="display:none;font-size:12px;color:#98989b;padding:10px 0">키워드 뉴스를 불러오는 중입니다.</div>
+          <div id="kwnews-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
+        </div>
+        <div class="blueprint" style="padding:16px 18px;background:#f2f2f3">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
+          <div id="basis-body"></div>
+          <div id="basis-foot" class="mono" style="font-size:10.5px;color:#98989b;padding-top:8px;line-height:1.5;white-space:pre-line"></div>
         </div>
     </div>
 
