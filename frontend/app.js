@@ -229,14 +229,14 @@
   const FLOW_W = 1120, FLOW_H = 264;
   const FLOW_PAD = { l: 64, r: 14, t: 26, b: 42 };
 
-  // 축 눈금용 — 서버의 _fmt_signed_flow 와 같은 규칙(백만원 -> 억/조).
+  // 축 눈금용 — 서버의 _fmt_signed_flow 와 같은 규칙. 네이버 원본이 이미
+  // 억원이라(페이지 표기 "단위:억원") 조 단위만 접는다.
   function flowAxisLabel(v, unitLabel) {
     if (v === 0) return "0";   // 조 눈금 사이에 "0억"이 끼면 단위가 뒤섞여 보인다
     if (unitLabel === "계약") return v.toLocaleString("en-US");
-    const eok = v / 100;
-    return Math.abs(eok) >= 10000
-      ? `${(eok / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
-      : `${Math.round(eok).toLocaleString("en-US")}억`;
+    return Math.abs(v) >= 10000
+      ? `${(v / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
+      : `${Math.round(v).toLocaleString("en-US")}억`;
   }
 
   // 1 / 2 / 2.5 / 5 × 10^k 중 v 이상인 첫 값 — 눈금이 읽기 좋은 수로 떨어진다.

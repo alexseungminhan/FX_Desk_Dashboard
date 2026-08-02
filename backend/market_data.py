@@ -244,16 +244,16 @@ FX_NEWS_SNAPSHOT_LIMIT = 45
 
 
 def _fmt_signed_flow(v: float, unit: str) -> str:
-    """투자자 순매수 표시. 대금(백만원)은 조/억으로 접고, 선물은 계약 수
-    그대로. 순매수/순매도는 부호가 전부라 +는 항상 붙인다."""
+    """투자자 순매수 표시. 네이버가 주는 값이 이미 억원이라 조 단위만
+    접는다(선물은 계약 수 그대로). 순매수/순매도는 부호가 전부라 +는 항상
+    붙인다."""
     if unit == "contract":
         return f"{v:+,.0f}" if round(v) else "0"
-    eok = v / 100  # 백만원 -> 억원
-    if abs(eok) >= 10_000:
-        return f"{eok / 10_000:+,.2f}조"
+    if abs(v) >= 10_000:
+        return f"{v / 10_000:+,.2f}조"
     # 억 미만은 반올림하면 0이 되는데, 거기에 부호를 붙이면 "-0억"처럼
     # 방향이 있는 것처럼 보인다. 0은 부호 없이 0으로 둔다.
-    return f"{eok:+,.0f}억" if round(eok) else "0억"
+    return f"{v:+,.0f}억" if round(v) else "0억"
 
 
 def _usable_price(v) -> float | None:
@@ -918,7 +918,7 @@ class MarketData:
                 ]
             return {
                 "label": data["label"],
-                "unitLabel": "계약" if unit == "contract" else "원",
+                "unitLabel": "계약" if unit == "contract" else "억원",
                 "asOf": data["asOf"],
                 "days": data["days"],
                 "periods": periods,
