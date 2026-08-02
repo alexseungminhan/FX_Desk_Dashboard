@@ -355,6 +355,7 @@ class MarketData:
         self.investor_flow: dict = {}
         self.investor_flow_stale: bool = True
         self.keyword_news: dict = {}
+        self.keyword_news_attempted: bool = False
         self.basis: dict | None = None
         self.basis_stale: bool = True
         self.bond_curve: dict | None = None
@@ -571,6 +572,7 @@ class MarketData:
         except Exception:
             log.exception("poll_keyword_news failed — keeping last known items")
             return
+        self.keyword_news_attempted = True
         # 그룹 전체가 비는 건 검색이 막혔다는 뜻이므로 직전 결과를 살린다.
         if not any(g.get("items") for g in data.values()):
             log.warning("poll_keyword_news returned no items — keeping last known items")
@@ -1125,6 +1127,13 @@ class MarketData:
             "investorFlowPeriods": kr_investor_flow.PERIODS,
             "basis": basis,
             "keywordNews": keyword_news_rows,
+            # 화면이 "불러오는 중"과 "수집 실패"를 구분하게 한다. 클라우드에서
+            # 네이버 검색이 IP로 막히면 영영 안 채워지는데, 그때 계속
+            # 로딩 문구만 띄우면 고장을 못 알아챈다.
+            "keywordNewsStatus": (
+                "ok" if any(g.get("items") for g in keyword_news_rows.values())
+                else "failed" if self.keyword_news_attempted else "pending"
+            ),
             "bondCurve": bond_curve_rows,
             "fxBondIssues": fx_bond_rows,
             "bondFlow": bond_flow_rows,

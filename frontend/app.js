@@ -637,7 +637,15 @@
     // 검색어가 섞인 그룹(M&A = M&A + 인수합병)에서만 어느 쪽에 걸렸는지 표시.
     const showHit = new Set(shown.map((n) => n.hit)).size > 1;
 
-    $("kwnews-empty").style.display = items.length ? "none" : "block";
+    const empty = $("kwnews-empty");
+    empty.style.display = items.length ? "none" : "block";
+    if (!items.length) {
+      // 클라우드에서 네이버 검색이 IP로 막히면 영영 안 채워진다. 그때
+      // "불러오는 중"만 띄우면 고장인 걸 알아챌 수가 없다.
+      empty.textContent = latest.keywordNewsStatus === "failed"
+        ? "네이버 뉴스 검색에 접근하지 못했습니다 (서버 IP 차단 가능성 · NAVER_CLIENT_ID/SECRET 설정 시 공식 API로 전환)"
+        : "키워드 뉴스를 불러오는 중입니다.";
+    }
     $("kwnews-list").innerHTML = shown.map((n) => `
       <div class="kwn-row">
         <span class="mono kwn-when">${esc(n.when)}</span>
