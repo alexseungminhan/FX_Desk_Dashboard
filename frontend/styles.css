@@ -41,6 +41,14 @@
   --color-accent-2-800: #314457;
   --color-accent-2-900: #1f2d3a;
 
+  /* 역할 이름 — 보드 전체가 쓰는 회색 네 단계. 위 뉴트럴 램프와 같은 값
+     이지만, 쓰는 쪽에서 "몇 번 회색"이 아니라 "무슨 용도"로 고르게 한다.
+     톤을 조정할 일이 생기면 여기 네 줄만 건드리면 된다. */
+  --c-label: var(--color-neutral-500);   /* 표 머리·캡션·타임스탬프 */
+  --c-dim:   var(--color-neutral-600);   /* 보조 텍스트 */
+  --c-sub:   var(--color-neutral-700);   /* 본문 다음 단계 */
+  --c-empty: #c4c4c6;                    /* 값 없음(—) — 램프보다 더 물러난다 */
+
   --font-heading: "Barlow Condensed", system-ui, sans-serif;
   --font-heading-weight: 600;
   --font-body: "Barlow", system-ui, sans-serif;
@@ -298,10 +306,16 @@ a:hover { color: var(--color-accent-700); }
 /* — clickable rows (open detail popups) — */
 .clickable-row { cursor: pointer; }
 .clickable-row:hover { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+/* 행은 div 지만 실제로는 버튼이다 — 키보드로 짚었을 때 어디에 있는지
+   보여야 Enter 를 누를 수 있다. */
+.clickable-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
 /* — 상세 팝업 (popup.html 디자인: 종목/지표 공용) — */
 .pop-backdrop{position:fixed;inset:0;z-index:60;background:rgba(29,31,32,.42);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:44px 20px;overflow-y:auto}
 .pop-backdrop[hidden]{display:none}
+/* 팝업이 떠 있는 동안 뒤 페이지는 얼어 있어야 한다 — 모바일에서 팝업 안을
+   스크롤하다 끝에 닿으면 뒤 페이지가 딸려 밀리는 걸 막는다. */
+html.modal-open, html.modal-open body{overflow:hidden}
 .pop{width:100%;max-width:720px;background:#f2f2f3;padding:20px 22px 18px;position:relative;box-shadow:var(--shadow-lg);font-family:var(--font-body);color:#1d1f20}
 .pop .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
 

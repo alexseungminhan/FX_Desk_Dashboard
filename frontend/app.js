@@ -37,6 +37,31 @@
     }[c]));
   }
 
+  // 링크는 http(s) 만 통과시킨다. esc() 는 따옴표를 막아 속성을 못 벗어나게
+  // 하지만 href="javascript:…" 자체는 막지 못한다 — 출처(네이버·야후)를
+  // 믿더라도 클릭 한 번에 실행되는 통로는 열어둘 이유가 없다.
+  function safeUrl(u) {
+    try {
+      const p = new URL(String(u ?? ""), location.origin).protocol;
+      return p === "http:" || p === "https:" ? String(u) : "";
+    } catch { return ""; }
+  }
+
+  // 스냅샷은 10초마다 오지만 패널 대부분은 그대로다. 만들어낸 HTML 이
+  // 직전과 같으면 DOM 을 건드리지 않는다 — 25개 패널을 매번 새로 그리면
+  // 그만큼 레이아웃과 이벤트 바인딩이 통째로 다시 일어난다.
+  function setHtml(el, html) {
+    if (!el || el.__html === html) return false;
+    el.__html = html;
+    el.innerHTML = html;
+    return true;
+  }
+
+  // 값 행은 div 지만 하는 일은 버튼이다 — 키보드와 스크린리더에도 그렇게
+  // 보이도록 역할과 탭 순서를 붙인다. 실제 Enter/Space 처리는 아래
+  // 위임 리스너가 맡는다.
+  const ROW_A11Y = ' role="button" tabindex="0"';
+
   function staleTitle(row) {
     return row.stale ? ' title="마지막 성공한 값 (일시적 갱신 실패)"' : "";
   }
@@ -50,17 +75,17 @@
   // -- panel renderers ---------------------------------------------------
 
   function renderTicker(rows) {
-    $("ticker-strip").innerHTML = rows.map((t) => `
-      <div class="clickable-row" data-kind="${esc(t.kind || "index")}" data-symbol="${esc(t.symbol)}" data-name="${esc(t.name || t.label)}"${t.pair ? ` data-pair="${esc(t.pair)}"` : ""}${t.contract ? ` data-contract="${esc(t.contract)}"` : ""}${t.sub ? ` data-sub="${esc(t.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(t)}>
-        <span style="font-size:10px;letter-spacing:.06em;color:#5d5d60;text-transform:uppercase;white-space:nowrap">${esc(t.label)}</span>
+    setHtml($("ticker-strip"), rows.map((t) => `
+      <div class="clickable-row"${ROW_A11Y} data-kind="${esc(t.kind || "index")}" data-symbol="${esc(t.symbol)}" data-name="${esc(t.name || t.label)}"${t.pair ? ` data-pair="${esc(t.pair)}"` : ""}${t.contract ? ` data-contract="${esc(t.contract)}"` : ""}${t.sub ? ` data-sub="${esc(t.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(t)}>
+        <span style="font-size:10px;letter-spacing:.06em;color:var(--c-sub);text-transform:uppercase;white-space:nowrap">${esc(t.label)}</span>
         <span class="mono${t.stale ? " stale-dot" : ""}" style="font-size:15px;font-weight:500">${esc(t.price)}</span>
         <span class="mono" style="font-size:11px;color:${t.color}">${t.arrow} ${esc(t.pct)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function fxRowHtml(f, kind) {
     return `
-      <div class="fx-row clickable-row" data-kind="${kind}" data-symbol="${esc(f.symbol)}" data-name="${esc(f.name)}"${f.pair ? ` data-pair="${esc(f.pair)}"` : ""}${f.sub ? ` data-sub="${esc(f.sub)}"` : ""}${staleTitle(f)}>
+      <div class="fx-row clickable-row"${ROW_A11Y} data-kind="${kind}" data-symbol="${esc(f.symbol)}" data-name="${esc(f.name)}"${f.pair ? ` data-pair="${esc(f.pair)}"` : ""}${f.sub ? ` data-sub="${esc(f.sub)}"` : ""}${staleTitle(f)}>
         <span class="fx-pair">${esc(f.pair || f.name)}</span>
         <span class="mono fx-px">${esc(f.price)}</span>
         <span class="mono fx-pct" style="color:${f.color}">${f.arrow} ${esc(f.pct)}</span>
@@ -71,91 +96,91 @@
     regions.forEach((g, i) => {
       const col = $(`fx-col-${i}`);
       if (!col) return;
-      col.innerHTML = `<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);padding:4px 0;border-bottom:1px solid var(--color-divider)">${esc(g.label)}</div>`
-        + g.rows.map((f) => fxRowHtml(f, "fx")).join("");
+      setHtml(col, `<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);padding:4px 0;border-bottom:1px solid var(--color-divider)">${esc(g.label)}</div>`
+        + g.rows.map((f) => fxRowHtml(f, "fx")).join(""));
     });
   }
 
   function renderIdxMain(rows) {
     const half = Math.ceil(rows.length / 2);
-    $("idx-col-0").innerHTML = rows.slice(0, half).map((r) => fxRowHtml(r, "index")).join("");
-    $("idx-col-1").innerHTML = rows.slice(half).map((r) => fxRowHtml(r, "index")).join("");
+    setHtml($("idx-col-0"), rows.slice(0, half).map((r) => fxRowHtml(r, "index")).join(""));
+    setHtml($("idx-col-1"), rows.slice(half).map((r) => fxRowHtml(r, "index")).join(""));
   }
 
   function renderRates(rows) {
-    $("rates-list").innerHTML = rows.map((rt) => `
-      <div class="fx-row clickable-row" data-kind="rate" data-symbol="${esc(rt.symbol)}" data-name="${esc(rt.name)}" data-sub="${esc(rt.sub)}"${staleTitle(rt)}>
+    setHtml($("rates-list"), rows.map((rt) => `
+      <div class="fx-row clickable-row"${ROW_A11Y} data-kind="rate" data-symbol="${esc(rt.symbol)}" data-name="${esc(rt.name)}" data-sub="${esc(rt.sub)}"${staleTitle(rt)}>
         <span class="fx-pair">${esc(rt.name)}</span>
         <span class="mono fx-px">${esc(rt.value)}</span>
         <span class="mono fx-pct" style="color:${rt.color}">${rt.arrow} ${esc(rt.chg)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderCommodities(rows) {
-    $("commodities-list").innerHTML = rows.map((r) => `
-      <div class="fx-row clickable-row" data-kind="commodity" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name)}" data-contract="${esc(r.contract)}"${staleTitle(r)}>
+    setHtml($("commodities-list"), rows.map((r) => `
+      <div class="fx-row clickable-row"${ROW_A11Y} data-kind="commodity" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name)}" data-contract="${esc(r.contract)}"${staleTitle(r)}>
         <span class="fx-pair">${esc(r.name)}</span>
         <span class="mono fx-px">$${esc(r.price)}</span>
         <span class="mono fx-pct" style="color:${r.color}">${r.arrow} ${esc(r.pct)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderMovers() {
     if (!latest) return;
     const rows = moversTab === "gainers" ? latest.gainers : latest.losers;
-    $("movers-list").innerHTML = rows.map((m) => `
-      <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
+    setHtml($("movers-list"), rows.map((m) => `
+      <div class="mv-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderKrMostTraded() {
     if (!latest) return;
-    $("kr-most-traded-list").innerHTML = latest.krMostTraded.map((m) => `
-      <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
+    setHtml($("kr-most-traded-list"), latest.krMostTraded.map((m) => `
+      <div class="mt-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
         <span class="mono mt-vol">${esc(m.tradingValue)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderUsMovers() {
     if (!latest) return;
     const rows = usMoversTab === "gainers" ? latest.usGainers : latest.usLosers;
-    $("us-movers-list").innerHTML = rows.map((m) => `
-      <div class="mv-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
+    setHtml($("us-movers-list"), rows.map((m) => `
+      <div class="mv-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderUsMostActive() {
     if (!latest) return;
-    $("us-most-active-list").innerHTML = latest.usMostActive.map((m) => `
-      <div class="mt-row clickable-row" data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
+    setHtml($("us-most-active-list"), latest.usMostActive.map((m) => `
+      <div class="mt-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
         <span class="mono mt-vol">${esc(m.volume)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderKrRates(rows) {
     if (!rows) return;
-    $("kr-rates-list").innerHTML = rows.map((r) => `
-      <div class="fx-row clickable-row" data-kind="krrate" data-symbol="${esc(r.code)}" data-name="${esc(r.name)}"${staleTitle(r)}>
+    setHtml($("kr-rates-list"), rows.map((r) => `
+      <div class="fx-row clickable-row"${ROW_A11Y} data-kind="krrate" data-symbol="${esc(r.code)}" data-name="${esc(r.name)}"${staleTitle(r)}>
         <span class="fx-pair">${esc(r.name)}</span>
         <span class="mono fx-px">${esc(r.value)}</span>
         <span class="mono fx-pct" style="color:${r.color}">${r.arrow} ${esc(r.chg)}</span>
-      </div>`).join("");
+      </div>`).join(""));
   }
 
   function renderFxNews(rows) {
@@ -166,14 +191,14 @@
     if (fxNewsPage > totalPages) fxNewsPage = totalPages;
     const start = (fxNewsPage - 1) * FX_NEWS_PAGE_SIZE;
 
-    $("fx-news-list").innerHTML = fxNewsRows.slice(start, start + FX_NEWS_PAGE_SIZE).map((n) => `
+    setHtml($("fx-news-list"), fxNewsRows.slice(start, start + FX_NEWS_PAGE_SIZE).map((n) => `
       <div style="display:flex;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06)">
-        <span class="mono" style="font-size:10.5px;color:#98989b;min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
+        <span class="mono" style="font-size:10.5px;color:var(--c-label);min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
         <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
-          ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
+          ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
           <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
         </div>
-      </div>`).join("");
+      </div>`).join(""));
 
     renderPagination("fx-news-pagination", fxNewsPage, totalPages, (p) => {
       fxNewsPage = p;
@@ -192,7 +217,7 @@
     const foot = $("flow-foot");
 
     if (!data || !periods.length) {
-      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">수급 데이터를 불러오지 못했습니다.</div>`;
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">수급 데이터를 불러오지 못했습니다.</div>`);
       foot.textContent = "";
       return;
     }
@@ -215,7 +240,7 @@
         </div>`;
     }).join("");
 
-    table.innerHTML = head + rows;
+    setHtml(table, head + rows);
     foot.textContent = `${data.asOf} 기준 · 단위 ${data.unitLabel} · 최근 ${data.days}영업일 누적`
       + (data.stale ? " · 갱신 실패(직전 값)" : "");
     renderFlowChart(data, periods);
@@ -312,7 +337,7 @@
     $("flow-chart-period").textContent = period
       ? `· ${period.label} 누적 (단위 ${data.unitLabel})` : "";
 
-    if (!cells.length) { box.innerHTML = ""; flowChartKey = ""; return; }
+    if (!cells.length) { setHtml(box, ""); flowChartKey = ""; return; }
 
     // 스냅샷은 10초마다 오지만 수급 원본은 5분마다 갱신된다. 값이 그대로면
     // SVG를 다시 만들지 않는다 — 매번 새로 그리면 눈에 띄게 깜빡인다.
@@ -320,8 +345,8 @@
     if (key === flowChartKey) return;
     flowChartKey = key;
 
-    box.innerHTML = netBuyBarsSvg(cells, (v) => flowAxisLabel(v, data.unitLabel),
-      `${data.label} 주체별 순매수`);
+    setHtml(box, netBuyBarsSvg(cells, (v) => flowAxisLabel(v, data.unitLabel),
+      `${data.label} 주체별 순매수`));
   }
 
   // -- 채권 수급 (KOFIA 장외채권) ----------------------------------------
@@ -344,7 +369,7 @@
     const table = $("bflow-table");
 
     if (!bf || !periods.length) {
-      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">채권 수급을 불러오지 못했습니다.</div>`;
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">채권 수급을 불러오지 못했습니다.</div>`);
       $("bflow-foot").textContent = "";
       $("bflow-chart").innerHTML = "";
       return;
@@ -375,12 +400,12 @@
         const c = (bf.periods[p.key][bondFlowType] || [])[i];
         return c
           ? `<span class="mono flow-val" style="color:${c.color}">${esc(c.value)}</span>`
-          : `<span class="mono flow-val" style="color:#c4c4c6">—</span>`;
+          : `<span class="mono flow-val" style="color:var(--c-empty)">—</span>`;
       }).join("");
       return `<div class="flow-row bflow-row"><span class="flow-name">${esc(first[i].label)}</span>${cells}</div>`;
     }).join("");
 
-    table.innerHTML = head + rows;
+    setHtml(table, head + rows);
     const d = bf.asOf;
     $("bflow-foot").textContent =
       `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 기준 · 단위 원 · 순매수 = 매수 − 매도 · 장외 거래대금`
@@ -408,7 +433,7 @@
     const q = latest.bondQuotes;
     const list = $("quotes-list");
     if (!q || !q.rows.length) {
-      list.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">최종호가를 불러오지 못했습니다.</div>`;
+      setHtml(list, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">최종호가를 불러오지 못했습니다.</div>`);
       $("quotes-asof").textContent = "";
       return;
     }
@@ -417,14 +442,14 @@
       <span>종목</span><span>잔존기간</span><span class="q-num">수익률</span>
       <span class="q-num">전일대비</span><span class="q-num">연중 최저~최고</span></div>`;
 
-    list.innerHTML = head + q.rows.map((r) => `
+    setHtml(list, head + q.rows.map((r) => `
       <div class="q-row">
         <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</span>
-        <span style="color:#7a7a7d;font-size:11px">${esc(r.term)}</span>
+        <span style="color:var(--c-dim);font-size:11px">${esc(r.term)}</span>
         <span class="mono q-num" style="font-weight:500">${esc(r["yield"])}</span>
         <span class="mono q-num" style="color:${r.changeColor}">${r.arrow} ${esc(r.changeBp)}</span>
-        <span class="mono q-num" style="color:#7a7a7d;font-size:11px">${esc(r.range)}</span>
-      </div>`).join("");
+        <span class="mono q-num" style="color:var(--c-dim);font-size:11px">${esc(r.range)}</span>
+      </div>`).join(""));
 
     const d = q.asOf;
     $("quotes-asof").textContent = `· ${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} · 단위 %`;
@@ -440,7 +465,7 @@
 
     const swapBox = $("swap-table");
     if (!sp || !sp.rows.length) {
-      swapBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">스왑포인트를 불러오지 못했습니다.</div>`;
+      setHtml(swapBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">스왑포인트를 불러오지 못했습니다.</div>`);
       $("swap-spot").textContent = "";
     } else {
       // 양대 중개사(서울외국환중개·한국자금중개)를 나란히 — 같은 상품의
@@ -451,7 +476,7 @@
       const group = (o, k) =>
         [o.bid, o.offer, o.mid, o.annualized].map((v, i) =>
           `<span class="mono sw-num sw-${k}${edge(i)}" style="${
-            v === "—" ? "color:#c4c4c6" : i >= 2 ? "font-weight:500" : "color:#5d5d60"
+            v === "—" ? "color:var(--c-empty)" : i >= 2 ? "font-weight:500" : "color:var(--c-sub)"
           }">${esc(v)}</span>`).join("");
       const gHead = (k) =>
         ["Bid", "Offer", "Mid", "연율"].map((t, i) =>
@@ -464,28 +489,28 @@
         </div>
         <div class="sw-row sw-head"><span>만기</span>
           ${gHead("s")}${gHead("k")}</div>`;
-      swapBox.innerHTML = head + sp.rows.map((r) => `
+      setHtml(swapBox, head + sp.rows.map((r) => `
         <div class="sw-row">
           <span style="font-weight:500">${esc(r.label)}</span>
           ${group(r.smbs, "s")}${group(r.kmb, "k")}
-        </div>`).join("");
+        </div>`).join(""));
       $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 환산`;
     }
 
     const icBox = $("irscrs-table");
     if (!ic || !ic.rows.length) {
-      icBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">IRS·CRS를 불러오지 못했습니다.</div>`;
+      setHtml(icBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">IRS·CRS를 불러오지 못했습니다.</div>`);
     } else {
       const head = `<div class="ic-row ic-head"><span>만기</span>
         <span class="sw-num">IRS</span><span class="sw-num">CRS</span>
         <span class="sw-num">베이시스</span></div>`;
-      icBox.innerHTML = head + ic.rows.map((r) => `
+      setHtml(icBox, head + ic.rows.map((r) => `
         <div class="ic-row">
           <span style="font-weight:500">${esc(r.label)}</span>
           <span class="mono sw-num">${esc(r.irs)}</span>
           <span class="mono sw-num">${esc(r.crs)}</span>
           <span class="mono sw-num" style="color:${r.basisColor};font-weight:500">${esc(r.basis)}</span>
-        </div>`).join("");
+        </div>`).join(""));
     }
 
     if (ic && ic.source) {
@@ -496,18 +521,18 @@
     const bi = latest.bondIrs;
     const biBox = $("bondirs-table");
     if (!bi || !bi.rows.length) {
-      biBox.innerHTML = `<div style="font-size:12px;color:#98989b;padding:8px 0">국고채 또는 IRS 데이터를 기다리는 중입니다.</div>`;
+      setHtml(biBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">국고채 또는 IRS 데이터를 기다리는 중입니다.</div>`);
     } else {
       const head = `<div class="bi-row bi-head"><span>만기</span>
         <span class="sw-num">국고채</span><span class="sw-num">IRS</span>
         <span class="sw-num">스프레드</span></div>`;
-      biBox.innerHTML = head + bi.rows.map((r) => `
+      setHtml(biBox, head + bi.rows.map((r) => `
         <div class="bi-row">
           <span style="font-weight:500">${esc(r.label)}</span>
           <span class="mono sw-num">${esc(r.ktb)}</span>
           <span class="mono sw-num">${esc(r.irs)}</span>
           <span class="mono sw-num" style="color:${r.spreadColor};font-weight:500">${esc(r.spread)}</span>
-        </div>`).join("");
+        </div>`).join(""));
     }
 
     const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
@@ -523,7 +548,7 @@
     const st = latest.shortTermRates;
     const table = $("strate-table");
     if (!st || !st.rows.length) {
-      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">단기금리를 불러오지 못했습니다.</div>`;
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">단기금리를 불러오지 못했습니다.</div>`);
       $("strate-asof").textContent = "";
       $("strate-foot").textContent = "";
       return;
@@ -533,12 +558,12 @@
       st.tenors.map((t) => `<span class="st-num">${esc(t)}</span>`).join("")
       }<span class="st-num">당일 거래대금</span></div>`;
 
-    table.innerHTML = head + st.rows.map((r) => `
+    setHtml(table, head + st.rows.map((r) => `
       <div class="st-row">
         <span style="font-weight:500;white-space:nowrap">${esc(r.label)}</span>
-        ${r.rates.map((v) => `<span class="mono st-num"${v === "—" ? ' style="color:#c4c4c6"' : ""}>${esc(v)}</span>`).join("")}
-        <span class="mono st-num" style="color:#7a7a7d">${esc(r.amount)}</span>
-      </div>`).join("");
+        ${r.rates.map((v) => `<span class="mono st-num"${v === "—" ? ' style="color:var(--c-empty)"' : ""}>${esc(v)}</span>`).join("")}
+        <span class="mono st-num" style="color:var(--c-dim)">${esc(r.amount)}</span>
+      </div>`).join(""));
 
     const d = st.asOf;
     $("strate-asof").textContent = `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시`;
@@ -552,7 +577,7 @@
     const bc = latest.bondCurve;
     const table = $("curve-table");
     if (!bc || !bc.curves.length) {
-      table.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">수익률 곡선을 불러오지 못했습니다.</div>`;
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">수익률 곡선을 불러오지 못했습니다.</div>`);
       $("curve-asof").textContent = "";
       $("curve-chart").innerHTML = "";
       return;
@@ -565,7 +590,7 @@
       const byTenor = new Map(c.points.map((p) => [p.label, p]));
       const cells = bc.tenors.map((t) => {
         const p = byTenor.get(t);
-        if (!p) return `<span class="mono cv-val" style="color:#c4c4c6">—</span>`;
+        if (!p) return `<span class="mono cv-val" style="color:var(--c-empty)">—</span>`;
         // 국고채(기준) 행은 스프레드가 0이므로 값만 보여준다.
         const spread = p.spread == null ? "" : `<small>${p.spread >= 0 ? "+" : ""}${p.spread}bp</small>`;
         return `<span class="mono cv-val">${esc(p.value)}${spread}</span>`;
@@ -573,7 +598,7 @@
       return `<div class="cv-row${ci === 0 ? " cv-base" : ""}"><span class="cv-name">${esc(c.label)}</span>${cells}</div>`;
     }).join("");
 
-    table.innerHTML = head + rows;
+    setHtml(table, head + rows);
     const d = bc.asOf;
     $("curve-asof").textContent = d.length === 8 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시` : d;
     $("curve-foot").textContent = "단위 % · 값 아래는 국고채권 대비 스프레드"
@@ -602,7 +627,7 @@
     const box = $("curve-chart");
     $("curve-chart-label").textContent = `· ${curve.label}`;
     const pts = curve.points;
-    if (pts.length < 2) { box.innerHTML = ""; return; }
+    if (pts.length < 2) { setHtml(box, ""); return; }
 
     const W = FLOW_W, H = 210, P = { l: 52, r: 16, t: 18, b: 34 };
     const x0 = P.l, x1 = W - P.r, y0 = P.t, y1 = H - P.b;
@@ -639,14 +664,14 @@
         </g>`;
     }).join("");
 
-    box.innerHTML = `
+    setHtml(box, `
       <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet"
            role="img" aria-label="${esc(curve.label)} 만기별 수익률">
         ${grid}
         <path d="${area}" fill="rgba(89,128,166,.10)"/>
         <path d="${line}" fill="none" stroke="#5980a6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
         ${marks}
-      </svg>`;
+      </svg>`);
   }
 
   // -- 외화표시채 발행 ---------------------------------------------------
@@ -661,16 +686,16 @@
       <span>발행일</span><span>발행사</span><span>종목</span><span>통화</span>
       <span class="fb-num">발행액</span><span class="fb-num">쿠폰</span><span class="fb-num">만기</span></div>`;
 
-    $("fxbond-list").innerHTML = head + rows.map((r) => `
+    setHtml($("fxbond-list"), head + rows.map((r) => `
       <div class="fb-row">
-        <span class="mono" style="color:#7a7a7d">${esc(r.issueDate)}</span>
+        <span class="mono" style="color:var(--c-dim)">${esc(r.issueDate)}</span>
         <span class="fb-name" style="font-weight:500">${esc(r.issuer)}</span>
-        <span class="fb-name" style="color:#5d5d60" title="${esc(r.name)}">${esc(r.name)}</span>
+        <span class="fb-name" style="color:var(--c-sub)" title="${esc(r.name)}">${esc(r.name)}</span>
         <span class="mono fb-cur" style="font-size:11px">${esc(r.currency)}</span>
         <span class="mono fb-num">${esc(r.amount)}</span>
         <span class="mono fb-num">${esc(r.coupon)}</span>
-        <span class="mono fb-num" style="color:#7a7a7d">${esc(r.maturity)}</span>
-      </div>`).join("");
+        <span class="mono fb-num" style="color:var(--c-dim)">${esc(r.maturity)}</span>
+      </div>`).join(""));
   }
 
   // -- 코스피200 현·선물 베이시스 ---------------------------------------
@@ -682,7 +707,7 @@
     const foot = $("basis-foot");
 
     if (!b) {
-      body.innerHTML = `<div style="font-size:12px;color:#98989b;padding:10px 0">베이시스를 불러오지 못했습니다.</div>`;
+      setHtml(body, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">베이시스를 불러오지 못했습니다.</div>`);
       foot.textContent = "";
       return;
     }
@@ -690,11 +715,11 @@
     const stat = (label, value, color) =>
       `<div class="bs-stat"><span>${esc(label)}</span><b class="mono"${color ? ` style="color:${color}"` : ""}>${esc(value)}</b></div>`;
 
-    body.innerHTML = `
+    setHtml(body, `
       <div class="bs-big">
         <b class="mono" style="color:${b.basisColor}">${esc(b.basis)}</b>
         <span class="bs-tag" style="color:${b.basisColor}">${esc(b.state)}</span>
-        <span style="font-size:11px;color:#98989b;margin-left:auto">베이시스 (선물−현물)</span>
+        <span style="font-size:11px;color:var(--c-label);margin-left:auto">베이시스 (선물−현물)</span>
       </div>
       <div class="bs-stats">
         ${stat("현물 KOSPI200", b.spot)}
@@ -703,7 +728,7 @@
         ${stat("이론 베이시스", b.theoBasis)}
         ${stat("괴리율", `${b.spread} · ${b.valuation}`, b.spreadColor)}
         ${stat("만기까지", b.daysToExpiry != null ? `${b.daysToExpiry}일 (${b.expiry})` : "—")}
-      </div>`;
+      </div>`);
 
     foot.textContent = `${b.stamp}\n${b.assumption}`;
   }
@@ -737,15 +762,15 @@
         ? "네이버 뉴스 검색에 접근하지 못했습니다 (서버 IP 차단 가능성 · NAVER_CLIENT_ID/SECRET 설정 시 공식 API로 전환)"
         : "키워드 뉴스를 불러오는 중입니다.";
     }
-    $("kwnews-list").innerHTML = shown.map((n) => `
+    setHtml($("kwnews-list"), shown.map((n) => `
       <div class="kwn-row">
         <span class="mono kwn-when">${esc(n.when)}</span>
         <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
-          <a href="${esc(n.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>
+          ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
           ${showHit ? `<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.hit)}</span>` : ""}
-          ${n.press ? `<span style="font-size:10.5px;color:#98989b;margin-left:5px">${esc(n.press)}</span>` : ""}
+          ${n.press ? `<span style="font-size:10.5px;color:var(--c-label);margin-left:5px">${esc(n.press)}</span>` : ""}
         </div>
-      </div>`).join("");
+      </div>`).join(""));
 
     renderPagination("kwnews-pagination", kwNewsPage, totalPages, (p) => {
       kwNewsPage = p;
@@ -753,22 +778,37 @@
     });
   }
 
+  // 행 활성화 — 마우스 클릭과 키보드(Enter·Space)를 한 자리에서 받는다.
+  // 컨테이너에 위임해 두면 innerHTML 이 갈려도 리스너가 살아남는다.
+  // Space 는 기본 동작이 페이지 스크롤이라 눌린 자리에서 막아야 한다.
+  function onRowActivate(containerId, selector, handler) {
+    const el = $(containerId);
+    const fire = (ev) => {
+      if (ev.target.closest("button, a")) return;
+      const row = ev.target.closest(selector);
+      if (row) handler(row);
+    };
+    el.addEventListener("click", fire);
+    el.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      if (!ev.target.closest(selector)) return;
+      ev.preventDefault();
+      fire(ev);
+    });
+  }
+
   // Clicking any stock row (movers lists) opens the detail popup.
-  // Event delegation on the containers survives the innerHTML re-renders.
   for (const containerId of ["movers-list", "kr-most-traded-list", "us-movers-list", "us-most-active-list"]) {
-    $(containerId).addEventListener("click", (ev) => {
-      if (ev.target.closest("button")) return;
-      const row = ev.target.closest("[data-symbol]");
-      if (row && row.dataset.symbol) openStockPopup(row.dataset.symbol, row.dataset.name);
+    onRowActivate(containerId, "[data-symbol]", (row) => {
+      if (row.dataset.symbol) openStockPopup(row.dataset.symbol, row.dataset.name);
     });
   }
 
   // Same pattern for FX / index / commodity / rate rows -> the generic
   // indicator popup (kind carried in data-kind).
   for (const containerId of ["ticker-strip", "fx-regions", "idx-main", "rates-list", "kr-rates-list", "commodities-list"]) {
-    $(containerId).addEventListener("click", (ev) => {
-      const row = ev.target.closest("[data-kind]");
-      if (row) openIndicatorPopup(row.dataset.kind, row.dataset.symbol, row.dataset);
+    onRowActivate(containerId, "[data-kind]", (row) => {
+      openIndicatorPopup(row.dataset.kind, row.dataset.symbol, row.dataset);
     });
   }
 
@@ -805,17 +845,32 @@
   // 페이지 번호를 받아 해당 패널을 다시 그린다.
   function renderPagination(boxId, current, totalPages, onPick) {
     const box = $(boxId);
-    if (totalPages <= 1) { box.innerHTML = ""; box.style.display = "none"; return; }
+    if (totalPages <= 1) { setHtml(box, ""); box.style.display = "none"; return; }
     box.style.display = "flex";
     const btn = (label, page, opts = {}) => `
       <button type="button" data-page="${page}" ${opts.disabled ? "disabled" : ""}
         style="min-width:26px;padding:4px 8px;font-size:11.5px;border:1px solid var(--color-divider);background:${page === current ? "var(--color-accent)" : "transparent"};color:${page === current ? "#fff" : "inherit"};cursor:${opts.disabled ? "default" : "pointer"}">${label}</button>`;
 
-    let pages = [];
-    for (let p = 1; p <= totalPages; p++) pages.push(p);
-    box.innerHTML = btn("‹", Math.max(1, current - 1), { disabled: current === 1 })
-      + pages.map((p) => btn(p, p)).join("")
-      + btn("›", Math.min(totalPages, current + 1), { disabled: current === totalPages });
+    // 전체 페이지를 다 뿌리면 뉴스가 많은 날 버튼이 스무 개를 넘어 모바일에서
+    // 두세 줄을 먹는다. 처음·끝과 현재 주변만 남기고 사이는 … 로 접는다.
+    const keep = new Set([1, totalPages, current - 1, current, current + 1]);
+    if (current <= 3) [2, 3, 4].forEach((p) => keep.add(p));
+    if (current >= totalPages - 2) [totalPages - 3, totalPages - 2, totalPages - 1].forEach((p) => keep.add(p));
+    const pages = [...keep].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+
+    const gap = '<span style="min-width:16px;text-align:center;font-size:11.5px;color:var(--c-label)">…</span>';
+    let body = "";
+    pages.forEach((p, i) => {
+      if (i && p - pages[i - 1] > 1) body += gap;
+      body += btn(p, p);
+    });
+
+    // 페이저 모양이 그대로면 버튼도 그대로다 — 다시 그리지 않았는데 또
+    // 묶으면 같은 버튼에 리스너가 겹쳐 쌓인다.
+    const changed = setHtml(box, btn("‹", Math.max(1, current - 1), { disabled: current === 1 })
+      + body
+      + btn("›", Math.min(totalPages, current + 1), { disabled: current === totalPages }));
+    if (!changed) return;
 
     box.querySelectorAll("[data-page]").forEach((el) => {
       el.addEventListener("click", () => {
@@ -832,14 +887,14 @@
     const start = (newsPage - 1) * NEWS_PAGE_SIZE;
     const shown = all.slice(start, start + NEWS_PAGE_SIZE);
 
-    $("news-list").innerHTML = shown.map((n) => `
+    setHtml($("news-list"), shown.map((n) => `
       <div style="display:flex;gap:11px;padding:7px 0;border-bottom:1px solid rgba(29,31,32,.06)">
-        <span class="mono" style="font-size:10.5px;color:#98989b;min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
+        <span class="mono" style="font-size:10.5px;color:var(--c-label);min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
         <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
-          ${n.url ? `<a href="${esc(n.url)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
+          ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
           <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
         </div>
-      </div>`).join("");
+      </div>`).join(""));
 
     $("news-empty").style.display = (latest && latest.news && latest.news.length > 0 && all.length === 0) ? "block" : "none";
     renderPagination("news-pagination", newsPage, totalPages, (p) => { newsPage = p; renderNews(); });
@@ -958,15 +1013,15 @@
   function gsRender(indMatches, stockMatches) {
     gsItems = [...indMatches, ...stockMatches];
     if (!gsItems.length) {
-      gsResults.innerHTML = '<div style="padding:10px;font-size:12px;color:#98989b">검색 결과 없음</div>';
+      gsResults.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--c-label)">검색 결과 없음</div>';
       gsResults.style.display = "block";
       return;
     }
     const secLabel = (t) => `<div style="padding:6px 10px 3px;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);border-bottom:1px solid var(--color-divider)">${t}</div>`;
     const row = (it, i) => `
       <div class="gs-row" data-i="${i}" style="padding:8px 10px;font-size:12.5px;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px solid rgba(29,31,32,.06)">
-        <span>${esc(it.label)}${it.sub ? ` <span style="color:#98989b;font-size:11px">${esc(it.sub)}</span>` : ""}</span>
-        <span style="color:#98989b;font-size:11px;white-space:nowrap">${esc(it.tag)}</span>
+        <span>${esc(it.label)}${it.sub ? ` <span style="color:var(--c-label);font-size:11px">${esc(it.sub)}</span>` : ""}</span>
+        <span style="color:var(--c-label);font-size:11px;white-space:nowrap">${esc(it.tag)}</span>
       </div>`;
     let html = "";
     let i = 0;
@@ -1135,19 +1190,86 @@
   wireRangeButtons("stk", "stk-range");
   wireRangeButtons("ind", "ind-range");
 
+  // 서울 시각. toLocaleString 으로 만든 문자열을 Date 로 되파싱하는 방법은
+  // 브라우저마다 받아주는 형식이 달라 깨질 수 있다 — 포맷터가 쪼개준
+  // 조각을 그대로 읽는다.
+  const KST_FMT = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul", hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+
+  function kstNow() {
+    const out = {};
+    for (const { type, value } of KST_FMT.formatToParts(new Date())) out[type] = value;
+    // 자정은 로케일에 따라 24 로 나온다.
+    if (out.hour === "24") out.hour = "00";
+    return out;
+  }
+
   function nowAsOf() {
-    const now = new Date();
-    const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-    const p = (n) => String(n).padStart(2, "0");
-    return `기준 ${p(kst.getHours())}:${p(kst.getMinutes())}:${p(kst.getSeconds())} KST`;
+    const t = kstNow();
+    return `기준 ${t.hour}:${t.minute}:${t.second} KST`;
+  }
+
+  // -- 모달 공통: 포커스 가두기 + 뒤 페이지 잠금 --------------------------
+  // 팝업이 떠 있는데 Tab 이 뒤쪽 보드로 새 나가면 키보드 사용자는 자기가
+  // 어디 있는지 알 수 없다. 열 때 포커스를 안으로 들여놓고, Tab 이 마지막
+  // 요소를 넘어가면 처음으로 돌려보내고, 닫을 때 원래 자리로 되돌린다.
+
+  const FOCUSABLE = 'button:not([disabled]), a[href], input, [tabindex]:not([tabindex="-1"])';
+  let lastFocused = null;
+
+  function lockScroll(on) {
+    const html = document.documentElement;
+    if (on) {
+      // 스크롤바가 사라지며 생기는 폭 차이를 메워 배경이 튀지 않게 한다.
+      const gap = window.innerWidth - html.clientWidth;
+      if (gap > 0) document.body.style.paddingRight = `${gap}px`;
+      html.classList.add("modal-open");
+    } else {
+      html.classList.remove("modal-open");
+      document.body.style.paddingRight = "";
+    }
+  }
+
+  function openModal(backdrop) {
+    lastFocused = document.activeElement;
+    backdrop.hidden = false;
+    lockScroll(true);
+    const first = backdrop.querySelector(FOCUSABLE);
+    if (first) first.focus();
+  }
+
+  function closeModal(backdrop) {
+    backdrop.hidden = true;
+    lockScroll(false);
+    if (lastFocused && lastFocused.focus) lastFocused.focus();
+    lastFocused = null;
+  }
+
+  function trapFocus(backdrop) {
+    backdrop.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Tab") return;
+      const items = [...backdrop.querySelectorAll(FOCUSABLE)].filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (ev.shiftKey && document.activeElement === first) {
+        ev.preventDefault();
+        last.focus();
+      } else if (!ev.shiftKey && document.activeElement === last) {
+        ev.preventDefault();
+        first.focus();
+      }
+    });
   }
 
   function popupNewsHtml(news) {
-    if (!news || !news.length) return '<div style="font-size:12px;color:#98989b;padding:6px 0">관련 뉴스 없음</div>';
+    if (!news || !news.length) return '<div style="font-size:12px;color:var(--c-label);padding:6px 0">관련 뉴스 없음</div>';
     return news.map((n) => `
       <div class="pop-news-row">
-        ${n.url
-          ? `<a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.headline)}</a>`
+        ${safeUrl(n.url)
+          ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener">${esc(n.headline)}</a>`
           : `<span style="font-family:var(--font-body);font-size:12.5px;line-height:1.4;color:#1d1f20;white-space:normal">${esc(n.headline)}</span>`}
       </div>`).join("");
   }
@@ -1160,7 +1282,7 @@
   async function openStockPopup(symbol, name) {
     currentPopupSymbol = symbol;
     chartCtx.stk = { kind: "stock", symbol };
-    popupBackdrop.hidden = false;
+    openModal(popupBackdrop);
     setRangePressed("stk-range", "1D");
     $("stk-name").textContent = name || symbol;
     $("stk-code").textContent = "";
@@ -1219,9 +1341,10 @@
   function closeStockPopup() {
     currentPopupSymbol = null;
     chartCtx.stk = null;
-    popupBackdrop.hidden = true;
+    closeModal(popupBackdrop);
   }
 
+  trapFocus(popupBackdrop);
   $("stk-close").addEventListener("click", closeStockPopup);
   $("stk-close-btn").addEventListener("click", closeStockPopup);
   popupBackdrop.addEventListener("click", (ev) => { if (ev.target === popupBackdrop) closeStockPopup(); });
@@ -1251,7 +1374,7 @@
     const key = `${kind}:${symbol}`;
     currentIndicatorKey = key;
     chartCtx.ind = { kind, symbol };
-    indicatorBackdrop.hidden = false;
+    openModal(indicatorBackdrop);
     setRangePressed("ind-range", "1D");
     $("ind-title").textContent = data.pair || data.name || symbol;
     $("ind-subtitle").textContent = kind === "fx" ? (data.name || "") : (data.sub || "");
@@ -1308,9 +1431,10 @@
   function closeIndicatorPopup() {
     currentIndicatorKey = null;
     chartCtx.ind = null;
-    indicatorBackdrop.hidden = true;
+    closeModal(indicatorBackdrop);
   }
 
+  trapFocus(indicatorBackdrop);
   $("ind-close").addEventListener("click", closeIndicatorPopup);
   $("ind-close-btn").addEventListener("click", closeIndicatorPopup);
   indicatorBackdrop.addEventListener("click", (ev) => { if (ev.target === indicatorBackdrop) closeIndicatorPopup(); });
@@ -1319,11 +1443,9 @@
   // -- clock -----------------------------------------------------------
 
   function tickClock() {
-    const now = new Date();
-    const kst = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-    const p = (n) => String(n).padStart(2, "0");
-    $("clock").textContent = `${p(kst.getHours())}:${p(kst.getMinutes())}:${p(kst.getSeconds())} KST`;
-    $("today").textContent = `${kst.getFullYear()}.${p(kst.getMonth() + 1)}.${p(kst.getDate())}`;
+    const t = kstNow();
+    $("clock").textContent = `${t.hour}:${t.minute}:${t.second} KST`;
+    $("today").textContent = `${t.year}.${t.month}.${t.day}`;
   }
   tickClock();
   setInterval(tickClock, 1000);
@@ -1342,14 +1464,14 @@
     return (p >= 0 ? "+" : "") + p.toFixed(1) + "%";
   }
   function pctColor(p) {
-    return p > 0 ? "var(--color-accent)" : p < 0 ? "#c0392b" : "#7a7a7d";
+    return p > 0 ? "var(--color-accent)" : p < 0 ? "#c0392b" : "var(--c-dim)";
   }
 
   function statTile(label, value, sub, subColor) {
     return `<div style="display:flex;flex-direction:column;gap:2px">
-      <span style="font-size:10px;letter-spacing:.06em;color:#7a7a7d;text-transform:uppercase">${esc(label)}</span>
+      <span style="font-size:10px;letter-spacing:.06em;color:var(--c-dim);text-transform:uppercase">${esc(label)}</span>
       <span class="mono" style="font-size:19px;font-weight:600;line-height:1.1">${esc(value)}</span>
-      ${sub ? `<span class="mono" style="font-size:11.5px;color:${subColor || "#7a7a7d"}">${esc(sub)}</span>` : ""}
+      ${sub ? `<span class="mono" style="font-size:11.5px;color:${subColor || "var(--c-dim)"}">${esc(sub)}</span>` : ""}
     </div>`;
   }
 
@@ -1455,7 +1577,7 @@
   function renderCustody(d) {
     const empty = $("custody-empty"), chart = $("custody-chart"), stats = $("custody-stats");
     if (!d || !d.points || d.points.length === 0 || !d.stats) {
-      chart.innerHTML = "";
+      setHtml(chart, "");
       stats.innerHTML = "";
       empty.style.display = "block";
       return;
@@ -1473,8 +1595,9 @@
       statTile("최고 / 최저", `${fmtUsdShort(s.max.amount)} / ${fmtUsdShort(s.min.amount)}`, `${s.max.month} / ${s.min.month}`),
     ].join("");
 
-    chart.innerHTML = custodyChartSvg(d.points);
-    wireCustodyHover(chart);
+    // 같은 이유로, 차트를 새로 그렸을 때만 hover 를 다시 묶는다 —
+    // 24개 밴드 × 3개 리스너가 30분마다 겹쳐 쌓이면 안 된다.
+    if (setHtml(chart, custodyChartSvg(d.points))) wireCustodyHover(chart);
   }
 
   async function loadCustody() {
