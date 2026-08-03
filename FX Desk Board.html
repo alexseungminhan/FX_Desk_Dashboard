@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=7">
+<link rel="stylesheet" href="/static/styles.css?v=8">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -165,9 +165,13 @@
     #global-search,#news-kw-input{font-size:16px !important}
     /* 탭 줄은 좁은 화면에서 감춰진 채 옆으로 밀리느니 접혀서 다 보이는
        편이 낫다 — 채권종류 9개·커브 7개는 넘겨봐야 있는 줄도 모른다.
-       인라인 height 로 한 줄 높이가 박혀 있어 같이 풀어준다. */
-    .seg-nowrap{flex-wrap:wrap;overflow-x:visible;height:auto !important}
-    .seg-nowrap .seg-opt{border-left:1px solid var(--color-divider)}
+       인라인 height 로 한 줄 높이가 박혀 있어 같이 풀어준다.
+
+       단, 한 줄로 붙어 있을 때 쓰던 "사이에만 세로선"은 줄이 바뀌는 순간
+       위아래 경계가 없어져 아래윗줄 탭이 한 덩어리로 붙어 보인다. 접힐
+       때는 탭마다 테두리를 두르고 사이를 띄워, 낱개로 읽히게 한다. */
+    .seg-nowrap{flex-wrap:wrap;overflow-x:visible;height:auto !important;border:0;gap:5px}
+    .seg-nowrap .seg-opt{border:1px solid var(--color-divider)}
     /* 한글은 기본값이 아무 데서나 끊기라서 "대표수/익률" 처럼 낱말 중간에
        줄이 바뀐다. keep-all 이면 띄어쓰기에서만 접힌다. */
     h4,h5,.kop{word-break:keep-all;overflow-wrap:break-word}
@@ -593,6 +597,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=7"></script>
+<script src="/static/app.js?v=8"></script>
 </body>
 </html>

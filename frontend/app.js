@@ -1482,7 +1482,8 @@
   }
 
   function custodyChartSvg(points, w = 1000, h = 240) {
-    const padL = 34, padR = 34, padT = 34, padB = 30;
+    // padL 은 y축 눈금 글자("$149.3B")가 들어갈 만큼 잡는다.
+    const padL = 62, padR = 34, padT = 34, padB = 30;
     const accent = cssVar("--color-accent", "#5980a6");
     const divider = cssVar("--color-divider", "#d7d7d9");
     const bg = "#f2f2f3";
@@ -1498,10 +1499,15 @@
     const line = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
     const area = `${line} L ${(padL + iw).toFixed(1)} ${(padT + ih).toFixed(1)} L ${padL.toFixed(1)} ${(padT + ih).toFixed(1)} Z`;
 
-    // 가로 기준선 (min/max)
-    const grid = [padT, padT + ih].map(
-      (y) => `<line x1="${padL}" y1="${y}" x2="${padL + iw}" y2="${y}" stroke="${divider}" stroke-width="1"/>`
-    ).join("");
+    // y축 — 만기별 곡선과 같은 방식으로 네 단계 눈금에 값을 붙인다.
+    // 눈금이 없으면 선의 높낮이만 보이고 그게 얼마인지는 hover 해야 알 수 있다.
+    const grid = [0, 1, 2, 3].map((i) => {
+      const v = lo + (rng * i) / 3;
+      const y = ys(v);
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + iw}" y2="${y.toFixed(1)}" stroke="${divider}" stroke-width="1"/>`
+        + `<text x="${padL - 8}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5"`
+        + ` fill="${cssVar("--color-neutral-500", "#98989b")}" font-family="monospace">${esc(fmtUsdShort(v))}</text>`;
+    }).join("");
 
     // 데이터 포인트 (기본은 빈 점)
     const dots = coords.map(([x, y]) =>
