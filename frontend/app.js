@@ -444,19 +444,32 @@
       $("swap-spot").textContent = "";
     } else {
       // 양대 중개사(서울외국환중개·한국자금중개)를 나란히 — 같은 상품의
-      // 호가 폭이 비교되고 연율 Mid 는 서로 검증이 된다.
-      const head = `<div class="sw-row sw-head"><span>만기</span>
-        <span class="sw-num">SMBS Bid</span><span class="sw-num">Offer</span><span class="sw-num">연율</span>
-        <span class="sw-num">KMB Bid</span><span class="sw-num">Offer</span><span class="sw-num">연율</span></div>`;
-      const cell = (v, bold) =>
-        `<span class="mono sw-num"${v === "—" ? ' style="color:#c4c4c6"' : bold ? ' style="font-weight:500"' : ' style="color:#5d5d60"'}>${esc(v)}</span>`;
+      // 호가 폭이 비교되고 연율 Mid 는 서로 검증이 된다. 어느 열이 누구
+      // 고시인지는 바탕색·테두리(sw-s/sw-k)와 머리의 중개사 띠로 가른다.
+      // 묶음 안 네 칸: Bid | Offer | Mid | 연율.
+      const edge = (i) => (i === 0 ? " sw-edge-l" : i === 3 ? " sw-edge-r" : "");
+      const group = (o, k) =>
+        [o.bid, o.offer, o.mid, o.annualized].map((v, i) =>
+          `<span class="mono sw-num sw-${k}${edge(i)}" style="${
+            v === "—" ? "color:#c4c4c6" : i >= 2 ? "font-weight:500" : "color:#5d5d60"
+          }">${esc(v)}</span>`).join("");
+      const gHead = (k) =>
+        ["Bid", "Offer", "Mid", "연율"].map((t, i) =>
+          `<span class="sw-num sw-${k}${edge(i)}">${t}</span>`).join("");
+
+      const head = `<div class="sw-row sw-grouphead">
+          <span></span>
+          <span class="sw-grp sw-s sw-edge-l sw-edge-r">SMBS · 서울외국환중개</span>
+          <span class="sw-grp sw-k sw-edge-l sw-edge-r">KMB · 한국자금중개</span>
+        </div>
+        <div class="sw-row sw-head"><span>만기</span>
+          ${gHead("s")}${gHead("k")}</div>`;
       swapBox.innerHTML = head + sp.rows.map((r) => `
         <div class="sw-row">
           <span style="font-weight:500">${esc(r.label)}</span>
-          ${cell(r.smbs.bid)}${cell(r.smbs.offer)}${cell(r.smbs.annualized, true)}
-          ${cell(r.kmb.bid)}${cell(r.kmb.offer)}${cell(r.kmb.annualized, true)}
+          ${group(r.smbs, "s")}${group(r.kmb, "k")}
         </div>`).join("");
-      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · 연율은 각사 Mid 환산`;
+      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 환산`;
     }
 
     const icBox = $("irscrs-table");
@@ -653,7 +666,7 @@
         <span class="mono" style="color:#7a7a7d">${esc(r.issueDate)}</span>
         <span class="fb-name" style="font-weight:500">${esc(r.issuer)}</span>
         <span class="fb-name" style="color:#5d5d60" title="${esc(r.name)}">${esc(r.name)}</span>
-        <span class="mono" style="font-size:11px">${esc(r.currency)}</span>
+        <span class="mono fb-cur" style="font-size:11px">${esc(r.currency)}</span>
         <span class="mono fb-num">${esc(r.amount)}</span>
         <span class="mono fb-num">${esc(r.coupon)}</span>
         <span class="mono fb-num" style="color:#7a7a7d">${esc(r.maturity)}</span>

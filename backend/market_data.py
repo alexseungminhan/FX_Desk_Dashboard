@@ -1023,6 +1023,17 @@ class MarketData:
         def _fmt_ann(v):
             return f"{v:+.2f}%" if v is not None else "—"
 
+        # 스왑포인트 Mid = (Bid + Offer) / 2. 한쪽만 고시된 만기는 폭이
+        # 없어 Mid 가 성립하지 않으므로 비운다 — 연율 환산에 쓰는
+        # krw_swap 쪽 mid(한쪽만 있으면 그 값) 와는 일부러 다르다.
+        def _fmt_mid(o):
+            b, a = o.get("bid"), o.get("offer")
+            if b is None or a is None:
+                return "—"
+            m = (b + a) / 2
+            # 폭이 홀수면 .5 가 떨어진다 — 그때만 소수를 보인다.
+            return f"{m:,.0f}" if m == int(m) else f"{m:,.1f}"
+
         swap_rows = None
         if self.swap_points:
             sp = self.swap_points
@@ -1035,11 +1046,13 @@ class MarketData:
                         "smbs": {
                             "bid": _fmt_pt(r["smbs"]["bid"]),
                             "offer": _fmt_pt(r["smbs"]["offer"]),
+                            "mid": _fmt_mid(r["smbs"]),
                             "annualized": _fmt_ann(r["smbs"]["annualized"]),
                         },
                         "kmb": {
                             "bid": _fmt_pt(r["kmb"]["bid"]),
                             "offer": _fmt_pt(r["kmb"]["offer"]),
+                            "mid": _fmt_mid(r["kmb"]),
                             "annualized": _fmt_ann(r["kmb"]["annualized"]),
                         },
                     }

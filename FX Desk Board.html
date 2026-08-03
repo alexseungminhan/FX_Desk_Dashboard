@@ -77,24 +77,47 @@
   .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .q-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
   .q-num{text-align:right}
-  /* 원화 스왑: 만기 | SMBS Bid/Offer/연율 | KMB Bid/Offer/연율 */
-  .sw-row{display:grid;grid-template-columns:56px repeat(6,1fr);gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
-  /* 중개사 구획: SMBS 묶음과 KMB 묶음 사이에 세로 구분선 */
-  .sw-row > span:nth-child(4){border-right:1px solid rgba(29,31,32,.12);padding-right:10px}
+  /* 원화 스왑: 만기 | SMBS Bid/Offer/Mid/연율 | KMB Bid/Offer/Mid/연율.
+     칸 사이 gap 을 없애고 셀 안쪽 padding 으로 벌린다 — 중개사 묶음의
+     바탕색이 끊기지 않고 한 덩어리로 보여야 구분이 된다. */
+  .sw-row{display:grid;grid-template-columns:56px repeat(8,1fr);align-items:center;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .sw-row > span{padding:5px 7px}
+  .sw-row > span:first-child{padding-left:0}
+  /* 중개사 구획: 바탕색으로 묶고 양 끝에 세로 테두리를 세운다 */
+  .sw-s{background:rgba(89,128,166,.09)}
+  .sw-k{background:rgba(166,123,89,.10)}
+  .sw-s.sw-edge-l{border-left:1px solid rgba(89,128,166,.45)}
+  .sw-s.sw-edge-r{border-right:1px solid rgba(89,128,166,.45)}
+  .sw-k.sw-edge-l{border-left:1px solid rgba(166,123,89,.5)}
+  .sw-k.sw-edge-r{border-right:1px solid rgba(166,123,89,.5)}
+  /* 중개사 이름 띠 — 어느 묶음이 누구 고시인지 표 위에서 못박는다 */
+  .sw-grouphead{border-bottom:0}
+  .sw-grouphead > span:nth-child(2){grid-column:2/span 4}
+  .sw-grouphead > span:nth-child(3){grid-column:6/span 4}
+  .sw-grp{text-align:center;font-size:10px;letter-spacing:.08em;font-weight:600;padding:4px 7px !important}
+  .sw-grp.sw-s{color:#4a6d92;border-top:1px solid rgba(89,128,166,.45)}
+  .sw-grp.sw-k{color:#8a6540;border-top:1px solid rgba(166,123,89,.5)}
   .ic-row,.bi-row{display:grid;grid-template-columns:70px repeat(3,1fr);gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .sw-head,.ic-head,.bi-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
   .sw-num{text-align:right}
-  #swap-table{min-width:640px}
+  #swap-table{min-width:700px}
   #irscrs-table,#bondirs-table{min-width:480px}
   /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
   .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .st-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
   .st-num{text-align:right}
-  /* 외화표시채 발행 */
-  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 44px auto 62px 62px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  /* 외화표시채 발행.
+     행마다 grid 가 따로라, 폭이 내용에 따라 정해지는 칸(auto)이 하나라도
+     있으면 남는 폭이 행마다 달라져 fr 칸들이 제각각 어긋난다 — 발행액도
+     고정폭으로 못박아 모든 행이 같은 자리에서 끊기게 한다. */
+  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 46px 108px 62px 62px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .fb-head{border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px;font-size:10.5px;color:#98989b;letter-spacing:.06em}
-  .fb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fb-num{text-align:right}
+  /* fr 칸은 기본 최소폭이 내용 크기라, 긴 종목명이 들어오면 칸을 밀어낸다.
+     min-width:0 으로 풀어야 말줄임(…)이 먹고 열이 안 밀린다. */
+  .fb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .fb-row > span{min-width:0}
+  .fb-cur{white-space:nowrap;overflow:hidden}
+  .fb-num{text-align:right;white-space:nowrap;overflow:hidden}
   /* 키워드 뉴스 */
   .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06);align-items:baseline}
   .kwn-when{font-size:10.5px;color:#98989b;white-space:nowrap}
