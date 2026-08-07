@@ -366,6 +366,7 @@ class MarketData:
         self.bond_flow_stale: bool = True
         self.swap_points: dict | None = None
         self.irs_crs: dict | None = None
+        self.fx_implied: dict | None = None
         self.bond_quotes: dict | None = None
         self.short_term_rates: dict | None = None
 
@@ -652,6 +653,18 @@ class MarketData:
             self.irs_crs = curves
         if not points and not curves:
             log.warning("poll_krw_swap returned nothing — keeping last known swaps")
+
+        # FX-implied 원화 금리·CCS 베이시스. 스왑포인트·IRS 1Y·CD 91일이 다
+        # 있어야 나오고, 셋 중 하나라도 비면 조용히 지난 값을 유지한다 —
+        # 반쯤 채운 베이시스를 띄우느니 안 띄우는 게 낫다.
+        try:
+            implied = krw_swap.fetch_implied(
+                self.swap_points, self.irs_crs, self._cd_rate())
+        except Exception:
+            log.exception("fetch_implied failed — keeping last known implied basis")
+            return
+        if implied:
+            self.fx_implied = implied
 
     def poll_bond_quotes(self) -> None:
         """지표종목 최종호가수익률 (KOFIA) — bond_quotes.py."""
@@ -1060,6 +1073,63 @@ class MarketData:
                 ],
             }
 
+        # -- FX-implied 원화 금리 · CCS 베이시스 --------------------------
+        # basis 만 부호가 뜻을 가진다 (음수 = 스왑시장 원화 조달이 IRS 보다
+        # 싸다). 나머지는 레벨이라 색을 안 입힌다.
+        implied_rows = None
+        if self.fx_implied:
+            fi = self.fx_implied
+            usd = fi["usd"]
+
+            def _pct(v, n=2):
+                return f"{v * 100:.{n}f}%" if v is not None else "—"
+
+            def _bp(v):
+                return f"{v:+.2f}bp" if v is not None else "—"
+
+            six = fi.get("sixMonth")
+            implied_rows = {
+                "asOf": fi.get("asOf", ""),
+                "spotDate": fi.get("spotDate", ""),
+                "usdSource": usd["sourceLabel"],
+                "usdAsOf": usd.get("asOf", ""),
+                "usdNote": usd.get("note", ""),
+                "pointSource": fi.get("pointSource", ""),
+                # 화면에는 6M 이 보간이라는 사실만 한 줄로 남긴다. 보간 폭은
+                # 바로 위 방식별 값 줄에 이미 찍히고, 컨벤션(ACT/360 대
+                # ACT/365) 얘기는 조정 basis 열 자체가 답이라 또 적으면 중복이다.
+                # fx_implied 는 경고를 전부 계속 계산하므로 로그에는 남는다.
+                "warnings": ([f"6M IRS 는 고시가 없어 보간값이다 ({six['method']})."]
+                             if six else []),
+                "sixMethod": six["method"] if six else "",
+                "sixSpreadBp": f"{six['spreadBp']:.1f}bp" if six else "",
+                "sixVariants": [
+                    {"name": {"linear_days": "일수 선형", "log_df": "log-DF",
+                              "pchip": "PCHIP"}.get(k, k),
+                     "value": _pct(v, 4)}
+                    for k, v in (six["variants"].items() if six else [])
+                ],
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "days": str(r["days"]),
+                        "valueDate": (fi.get("valueDates", {}).get(r["label"]) or "")[5:],
+                        "swapRate": _pct(r["swapRate"]),
+                        "usdRate": _pct(r["usdRate"], 4),
+                        "yield": _pct(r["impliedYield"], 4),
+                        "irs": _pct(r["irs"], 3),
+                        "irsSource": r["irsSource"],
+                        "interpolated": r["interpolated"],
+                        "basis": _bp(r["basisBp"]),
+                        "basisColor": (
+                            flat if not r["basisBp"]
+                            else up if r["basisBp"] > 0 else down),
+                        "crossTerm": _bp(r["crossTermBp"]),
+                    }
+                    for r in fi["rows"]
+                ],
+            }
+
         irs_crs_rows = None
         if self.irs_crs:
             ic = self.irs_crs
@@ -1254,6 +1324,7 @@ class MarketData:
             "bondQuotes": bond_quote_rows,
             "shortTermRates": short_term_rows,
             "swapPoints": swap_rows,
+            "fxImplied": implied_rows,
             "irsCrs": irs_crs_rows,
             "bondIrs": bond_irs_rows,
         }

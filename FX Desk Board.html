@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=8">
+<link rel="stylesheet" href="/static/styles.css?v=11">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -122,6 +122,27 @@
   .sw-num{text-align:right}
   #swap-table{min-width:700px}
   #irscrs-table,#bondirs-table{min-width:480px}
+  /* FX-implied 원화금리·CCS 베이시스:
+     만기 | 일수 | swap rate | USD | implied yield | IRS | basis.
+     basis 만 부호가 뜻을 가지므로 왼쪽에 옅은 칸막이를 세워 레벨 칸들과
+     갈라 놓는다 — 눈이 "여기부터가 결론"으로 읽게 한다. */
+  .fi-row{display:grid;grid-template-columns:52px 44px repeat(5,1fr);align-items:center;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .fi-row > span{padding:5px 6px}
+  .fi-row > span:first-child{padding-left:0}
+  .fi-row > span:last-child{border-left:1px solid rgba(29,31,32,.12)}
+  .fi-head{font-size:10px;letter-spacing:.06em;color:var(--c-label);font-weight:600}
+  /* 보간으로 만든 행은 값 자체가 추정이라 표 안에서 티가 나야 한다 */
+  .fi-interp{background:rgba(140,120,80,.07)}
+  .fi-flag{display:inline-block;font-size:8.5px;letter-spacing:.06em;font-weight:600;
+           color:#8a6540;border:1px solid rgba(166,123,89,.5);border-radius:2px;
+           padding:0 3px;margin-left:4px;vertical-align:1px}
+  /* 6M 보간 방식별 값 — 하나를 고르는 게 아니라 폭을 보여주는 줄 */
+  .fi-variants{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:10.5px;
+               color:var(--c-label);padding:7px 0 0}
+  .fi-warn{font-size:10.5px;line-height:1.55;color:var(--c-label);padding-top:7px}
+  .fi-warn div{padding-left:11px;text-indent:-11px}
+  .fi-warn div::before{content:"▸ ";color:#8a6540}
+  #fximplied-table{min-width:660px}
   /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
   .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .st-num{text-align:right}
@@ -354,6 +375,10 @@
           </div>
           <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">FX 스왑포인트 <span style="color:var(--c-label);font-weight:400" id="swap-spot"></span></h5>
           <div class="scroll-x"><div id="swap-table"></div></div>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">FX-implied 원화금리 · CCS 베이시스 <span style="color:var(--c-label);font-weight:400" id="fximplied-src"></span></h5>
+          <div class="scroll-x"><div id="fximplied-table"></div></div>
+          <div id="fximplied-variants" class="mono fi-variants"></div>
+          <div id="fximplied-warn" class="fi-warn"></div>
           <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">IRS · CRS <span style="color:var(--c-label);font-weight:400" id="irscrs-src">· 통화베이시스 = CRS − IRS</span></h5>
           <div class="scroll-x"><div id="irscrs-table"></div></div>
           <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">국고채 − IRS <span style="color:var(--c-label);font-weight:400">· 스프레드 = 국고채 현물 − IRS</span></h5>
@@ -597,6 +622,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=8"></script>
+<script src="/static/app.js?v=11"></script>
 </body>
 </html>

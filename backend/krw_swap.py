@@ -25,21 +25,25 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+import fx_calendar
+import fx_implied
 import kmb
 import smbs
+import usd_rates
 
 log = logging.getLogger("krw_swap")
 
 KST = timezone(timedelta(hours=9))
 
-# (표시명, SMBS arr_value 접두, 연율 환산 일수). KMB 는 표시명으로 조회.
+# (표시명, SMBS arr_value 접두). KMB 는 표시명으로 조회.
 # 고시는 ON/TN/1W/2M/9M 도 있지만 데스크가 보는 건 이 네 구간이라
 # 표를 여기에 맞춘다 — SMBS 요청도 만기당 하나라 그만큼 준다.
+# 연율 환산 일수는 관습값이 아니라 fx_calendar 가 캘린더로 센다.
 TENORS = [
-    ("1M", "1M", 30),
-    ("3M", "3M", 90),
-    ("6M", "6M", 180),
-    ("1Y", "1Y", 365),
+    ("1M", "1M"),
+    ("3M", "3M"),
+    ("6M", "6M"),
+    ("1Y", "1Y"),
 ]
 
 SWAP_TERMS = ["1Y", "2Y", "3Y", "4Y", "5Y", "7Y", "10Y"]
@@ -55,10 +59,15 @@ def _range() -> str:
 
 
 def _annualized(point_jeon: float | None, spot: float | None, days: int | None) -> float | None:
-    """스왑포인트(전) → 연율 %. 전은 0.01원이라 100 으로 나눠 원으로 바꾼다."""
+    """스왑포인트(전) → 연율 %. 전은 0.01원이라 100 으로 나눠 원으로 바꾼다.
+
+    분모는 ACT/360 — FX 스왑 연율은 베이스 통화(USD) 머니마켓 관습을 따른다.
+    일수도 관습값(30/90/180/365)이 아니라 스팟 → 밸류데이트 실제 경과일수를
+    쓴다 (fx_calendar). 1M 을 30일로 놓으면 실제 31~33일일 때 연율이 3~10%
+    틀어지고, 365 를 쓰면 전 만기가 일률적으로 1.4% 작게 나온다."""
     if point_jeon is None or not spot or not days:
         return None
-    return (point_jeon / 100) / spot * (365 / days) * 100
+    return (point_jeon / 100) / spot * (360 / days) * 100
 
 
 def _smbs_points() -> tuple[dict[str, dict], str]:
@@ -66,7 +75,7 @@ def _smbs_points() -> tuple[dict[str, dict], str]:
     window = _range()
     out: dict[str, dict] = {}
     as_of = ""
-    for label, key, _days in TENORS:
+    for label, key in TENORS:
         series = smbs.fetch_series("FxSwap_xml.jsp", f"{key}_{window}", "FxSwap.jsp")
         bid = smbs.last_valid(series.get("Bid", []))
         offer = smbs.last_valid(series.get("Offer", []))
@@ -103,14 +112,20 @@ def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
     if not smbs_pts and not kmb_pts:
         return None
 
+    sched = fx_calendar.tenor_schedule()
+
     rows = []
-    for label, _key, days in TENORS:
+    for label, _key in TENORS:
         s = smbs_pts.get(label)
         k = kmb_pts.get(label)
         if not s and not k:
             continue
+        leg = sched["tenors"].get(label, {})
+        days = leg.get("days")
         rows.append({
             "label": label,
+            "days": days,
+            "valueDate": leg["value"].isoformat() if leg.get("value") else None,
             "smbs": {
                 **(s or {"bid": None, "offer": None, "mid": None}),
                 "annualized": _annualized(s["mid"] if s else None, spot_usdkrw, days),
@@ -123,7 +138,13 @@ def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
 
     if not rows:
         return None
-    return {"asOf": as_of, "spot": spot_usdkrw, "rows": rows}
+    return {
+        "asOf": as_of,
+        "spot": spot_usdkrw,
+        "rows": rows,
+        "spotDate": sched["spot"].isoformat(),
+        "daysApprox": sched["approx"],
+    }
 
 
 def _smbs_curves() -> dict[str, dict[str, float]]:
@@ -183,3 +204,89 @@ def fetch_irs_crs() -> dict | None:
     if not rows:
         return None
     return {"asOf": as_of, "source": source, "rows": rows}
+
+
+def fetch_implied(swap_points: dict | None, irs_crs: dict | None,
+                  cd_rate_pct: float | None) -> dict | None:
+    """FX-implied 원화 금리·CCS 베이시스 — fx_implied.compute 의 입력 조립.
+
+    보드가 이미 들고 있는 것들을 그러모은다:
+      스팟·스왑포인트  fetch_swap_points (전 단위 → 원으로 나눠 넘긴다)
+      일수            fx_calendar (스팟 → 밸류데이트 ACT)
+      USD 텀금리      usd_rates (외부, 소스 라벨을 그대로 들고 온다)
+      CD 91일         kr_rates 의 IRR_CD91 을 호출부가 %로 넘겨준다
+      IRS 1Y          fetch_irs_crs 의 1Y
+
+    9M IRS 는 두 중개사 모두 고시가 없어 항상 None 이다 — 6M 은 보간이고,
+    그 사실이 결과에 INTERPOLATED 로 따라붙는다.
+    """
+    if not swap_points or not swap_points.get("spot") or not swap_points.get("rows"):
+        return None
+    if cd_rate_pct is None:
+        log.warning("CD 91D missing — implied basis needs it as the 1M·3M IRS proxy")
+        return None
+
+    irs_1y_pct = None
+    if irs_crs:
+        irs_1y_pct = next((r["irs"] for r in irs_crs["rows"]
+                           if r["label"] == "1Y" and r.get("irs") is not None), None)
+    if irs_1y_pct is None:
+        log.warning("IRS 1Y missing — cannot anchor the long end")
+        return None
+
+    # 고시 단위는 전(0.01원). 계산기는 원 단위를 받는다.
+    # **KMB 고시를 쓴다** — IRS 1Y 도 KMB 라(fetch_irs_crs 가 KMB 우선) basis 의
+    # 양변이 같은 중개사 커브에서 나와야 어긋나지 않는다. KMB 가 빈 만기만
+    # SMBS 로 메우고, 그때는 어느 만기가 섞였는지 pointSource 에 남긴다.
+    points: dict[str, float] = {}
+    point_src: dict[str, str] = {}
+    for r in swap_points["rows"]:
+        if r["kmb"].get("mid") is not None:
+            points[r["label"]] = r["kmb"]["mid"] / 100
+            point_src[r["label"]] = "KMB"
+        elif r["smbs"].get("mid") is not None:
+            points[r["label"]] = r["smbs"]["mid"] / 100
+            point_src[r["label"]] = "SMBS"
+    if not points:
+        return None
+
+    days = {r["label"]: r["days"] for r in swap_points["rows"] if r.get("days")}
+    if not days:
+        return None
+    # 9M 은 표에 없지만 6M 보간 필러로 쓰이므로 일수만 캘린더에서 챙겨 둔다.
+    nine = fx_calendar.tenor_schedule()["tenors"].get("9M")
+    if nine:
+        days["9M"] = nine["days"]
+
+    usd = usd_rates.fetch_usd_curve(days)
+    if not usd:
+        log.warning("USD term curve unavailable — yield/basis cannot be computed")
+        return None
+
+    try:
+        res = fx_implied.compute(
+            spot_mid=swap_points["spot"],
+            swap_points=points,
+            days=days,
+            usd_rate=usd["rates"],
+            cd_rate=cd_rate_pct / 100,
+            irs_1y=irs_1y_pct / 100,
+            irs_9m=None,
+            convention_adjust=True,
+        )
+    except Exception:
+        log.exception("fx_implied.compute failed")
+        return None
+
+    if swap_points.get("daysApprox"):
+        res["warnings"].insert(0, "밸류데이트가 휴일표 범위 밖이라 일수가 근사치다.")
+
+    res["usd"] = usd
+    # 스왑포인트 출처. 전 만기 KMB 면 "KMB", 섞이면 그 사실을 그대로 내보낸다.
+    srcs = set(point_src.values())
+    res["pointSource"] = "KMB" if srcs == {"KMB"} else " · ".join(
+        f"{t} {s}" for t, s in point_src.items())
+    res["spotDate"] = swap_points.get("spotDate")
+    res["asOf"] = swap_points.get("asOf", "")
+    res["valueDates"] = {r["label"]: r.get("valueDate") for r in swap_points["rows"]}
+    return res

@@ -494,7 +494,49 @@
           <span style="font-weight:500">${esc(r.label)}</span>
           ${group(r.smbs, "s")}${group(r.kmb, "k")}
         </div>`).join(""));
-      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 환산`;
+      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 를 ACT/360 실제일수로 환산`;
+    }
+
+    // FX-implied 원화금리 · CCS 베이시스 — 스왑포인트를 금리로 편 것.
+    // 레벨 칸(swap rate/USD/yield/IRS)은 색이 없고 basis 두 칸만 색을 준다:
+    // 음수 = 스왑시장 원화 조달이 IRS 보다 싸다. 6M 은 IRS 고시가 없어
+    // 보간이라 행에 표시를 달고, 보간 폭과 경고를 표 아래에 붙인다.
+    const fi = latest.fxImplied;
+    const fiBox = $("fximplied-table");
+    if (!fi || !fi.rows.length) {
+      setHtml(fiBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">스왑포인트·IRS 1Y·CD 91일·USD 텀금리가 모두 있어야 계산됩니다.</div>`);
+      setHtml($("fximplied-variants"), "");
+      setHtml($("fximplied-warn"), "");
+      $("fximplied-src").textContent = "";
+    } else {
+      const head = `<div class="fi-row fi-head"><span>만기</span><span class="sw-num">일수</span>
+        <span class="sw-num">swap rate</span><span class="sw-num">USD</span>
+        <span class="sw-num">implied yield</span><span class="sw-num">KRW IRS</span>
+        <span class="sw-num">basis</span></div>`;
+      setHtml(fiBox, head + fi.rows.map((r) => `
+        <div class="fi-row${r.interpolated ? " fi-interp" : ""}">
+          <span style="font-weight:500">${esc(r.label)}</span>
+          <span class="mono sw-num" style="color:var(--c-label)">${esc(r.days)}</span>
+          <span class="mono sw-num" style="color:var(--c-sub)">${esc(r.swapRate)}</span>
+          <span class="mono sw-num" style="color:var(--c-sub)">${esc(r.usdRate)}</span>
+          <span class="mono sw-num" style="font-weight:500">${esc(r.yield)}</span>
+          <span class="mono sw-num" style="color:var(--c-sub)">${esc(r.irs)}${
+            r.interpolated ? `<span class="fi-flag">INTERP</span>` : ""}</span>
+          <span class="mono sw-num" style="color:${r.basisColor};font-weight:500">${esc(r.basis)}</span>
+        </div>`).join(""));
+
+      // 6M 보간은 값 하나가 아니라 폭으로 읽어야 해서 방식별 값을 다 편다.
+      setHtml($("fximplied-variants"), fi.sixVariants.length
+        ? `<span style="color:var(--c-sub)">6M IRS 보간</span>`
+          + fi.sixVariants.map((v) =>
+              `<span>${esc(v.name)} <b style="font-weight:500">${esc(v.value)}</b></span>`).join("")
+          + `<span>폭 ${esc(fi.sixSpreadBp)}</span>`
+        : "");
+      setHtml($("fximplied-warn"),
+        (fi.warnings || []).map((w) => `<div>${esc(w)}</div>`).join(""));
+      $("fximplied-src").textContent =
+        `· 스왑포인트·IRS ${fi.pointSource} 고시 · 스팟 ${fi.spotDate} 기준`
+        + ` · USD ${fi.usdSource} ${fi.usdAsOf}`;
     }
 
     const icBox = $("irscrs-table");
@@ -538,7 +580,11 @@
     const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
     $("swap-asof").textContent = stamp ? `${stamp} 고시` : "";
     $("swap-foot").textContent =
-      "스왑포인트 단위 전(1전 = 0.01원) · 연율 = 포인트/현물 × 365/일수 · IRS·CRS·국고채 단위 % · 국고채는 KOFIA 최종호가";
+      "스왑포인트 단위 전(1전 = 0.01원) · swap rate = 포인트/현물 × 360/실제일수 (FX 관습 ACT/360) · "
+      + "implied yield = {(1 + 포인트/현물)(1 + USD × 일수/360) − 1} × 365/일수 · "
+      + "yield 를 원화 관습(ACT/365)으로 연율화해 KRW IRS·CD 와 분모를 맞췄으므로 "
+      + "basis = yield − IRS 로 그냥 빼면 되고 별도 컨벤션 보정이 필요 없다 · "
+      + "IRS·CRS·국고채 단위 % · 국고채는 KOFIA 최종호가";
   }
 
   // -- 단기금융시장 금리 (CP · 전단채) ------------------------------------
