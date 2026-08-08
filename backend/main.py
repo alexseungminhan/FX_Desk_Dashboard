@@ -50,6 +50,10 @@ app = FastAPI(title="FX Desk Board")
 market = MarketData()
 
 
+# 매 틱 갱신되지만 그 자체로는 화면 수치를 바꾸지 않는 키.
+_TIMESTAMP_KEYS = {"asOf", "moversAsOf"}
+
+
 class ConnectionManager:
     """스냅샷 전체가 아니라 직전 틱과 달라진 섹션만 내보낸다.
 
@@ -74,6 +78,13 @@ class ConnectionManager:
         self.scheme[ws] = scheme
         if not delta:
             self.legacy.add(ws)
+        # legacy 가 하나라도 잡히면 옛 app.js 가 캐시에 남아 있다는 뜻이고,
+        # 그 접속자는 여전히 틱마다 통짜 스냅샷을 받아 간다. 대역폭이 안 줄면
+        # 여기부터 본다.
+        log.info(
+            "ws connect scheme=%s delta=%s · clients=%d (legacy=%d)",
+            scheme, delta, len(self.active), len(self.legacy),
+        )
 
     def disconnect(self, ws: WebSocket) -> None:
         self.active.discard(ws)
@@ -109,10 +120,16 @@ class ConnectionManager:
         dead = []
         for ws in list(self.active):
             scheme = self.scheme.get(ws, "kr")
+            patch = patches.get(scheme)
             if ws in self.legacy:
+                # 옛 클라이언트는 패치를 병합할 줄 모르니 통짜로 줄 수밖에 없다.
+                # 다만 타임스탬프만 바뀐 틱까지 249KB 를 부을 이유는 없다 —
+                # 그런 틱은 건너뛴다. 화면의 '기준 시각'만 잠깐 멎고 수치는
+                # 정확하다. 모두 새 app.js 로 넘어오면 이 갈래는 지워도 된다.
+                if not patch or not (patch.keys() - _TIMESTAMP_KEYS):
+                    continue
                 payload = snaps.get(scheme)
             else:
-                patch = patches.get(scheme)
                 # 바뀐 게 하나도 없으면 아예 보내지 않는다. 시세 폴링이
                 # 실패한 틱에서는 asOf 조차 갱신되지 않아 여기에 걸린다.
                 if not patch:
@@ -390,7 +407,14 @@ async def seibro_custody_endpoint() -> dict:
 
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(MAIN_HTML)
+    # no-cache 는 "캐시하지 마라"가 아니라 "쓰기 전에 반드시 물어봐라"다.
+    # 이게 없으면 Cache-Control 이 아예 없는 응답이라 브라우저가 휴리스틱
+    # 캐싱으로 재검증 없이 옛 HTML 을 꺼내 쓰고, 그러면 app.js 의 ?v= 를
+    # 아무리 올려도 새 스크립트가 영영 내려가지 않는다.
+    # 라우트에서 직접 돌려주는 FileResponse 는 StaticFiles 와 달리
+    # If-None-Match 를 안 보므로 재검증이 304 가 아니라 매번 200(45KB)이다.
+    # 페이지 로드당 한 번이라 WS 트래픽에 비하면 무시할 수준.
+    return FileResponse(MAIN_HTML, headers={"Cache-Control": "no-cache"})
 
 
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
