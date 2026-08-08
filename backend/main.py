@@ -51,32 +51,80 @@ market = MarketData()
 
 
 class ConnectionManager:
+    """스냅샷 전체가 아니라 직전 틱과 달라진 섹션만 내보낸다.
+
+    스냅샷은 210KB인데 10초 사이에 실제로 바뀌는 건 시세 몇 KB뿐이다
+    (뉴스는 300초, 채권 수급은 1800초마다 갱신되므로 각각 30번·180번씩
+    같은 내용이 다시 실려 나가고 있었다). 스킴별로 마지막에 내보낸 스냅샷을
+    들고 있다가 최상위 키 단위로 비교해, 바뀐 키만 patch 로 보낸다.
+    """
+
     def __init__(self) -> None:
         self.active: set[WebSocket] = set()
         self.scheme: dict[WebSocket, str] = {}
+        # 델타의 기준선. 스킴("kr"/"us")당 하나씩만 쌓인다.
+        self.last_sent: dict[str, dict] = {}
+        # 델타를 이해하지 못하는 접속자(캐시에 남은 옛 app.js). 배포 직후
+        # 열려 있던 탭이 깨지지 않도록 이쪽엔 통짜 스냅샷을 계속 보낸다.
+        self.legacy: set[WebSocket] = set()
 
-    async def connect(self, ws: WebSocket, scheme: str) -> None:
+    async def connect(self, ws: WebSocket, scheme: str, delta: bool) -> None:
         await ws.accept()
         self.active.add(ws)
         self.scheme[ws] = scheme
+        if not delta:
+            self.legacy.add(ws)
 
     def disconnect(self, ws: WebSocket) -> None:
         self.active.discard(ws)
         self.scheme.pop(ws, None)
+        self.legacy.discard(ws)
 
-    async def send_snapshot(self, ws: WebSocket) -> None:
-        colors = _colors_for(self.scheme.get(ws, "kr"))
-        await ws.send_json(market.build_snapshot(*colors))
+    @staticmethod
+    def _diff(old: dict | None, new: dict) -> dict:
+        if old is None:
+            return new
+        return {k: v for k, v in new.items() if old.get(k) != v}
+
+    async def send_full(self, ws: WebSocket) -> None:
+        """접속 직후 1회. 이후로는 broadcast 가 달라진 것만 덧발라 준다."""
+        scheme = self.scheme.get(ws, "kr")
+        snap = market.build_snapshot(*_colors_for(scheme))
+        # 이 스킴의 유일한 접속자라면 기준선을 지금 스냅샷으로 맞춘다. 아무도
+        # 없던 사이에 벌어진 변화를 다음 패치에 실어 보낼 이유가 없다. 다른
+        # 접속자가 이미 있으면 기준선은 그들이 받은 상태이므로 건드리지 않는다
+        # — 덮어쓰면 그들이 아직 못 받은 변화가 기준선에 흡수돼 영영 사라진다.
+        if sum(1 for s in self.scheme.values() if s == scheme) == 1:
+            self.last_sent[scheme] = snap
+        await ws.send_json({"type": "full", "data": snap} if ws not in self.legacy else snap)
 
     async def broadcast(self) -> None:
+        if not self.active:
+            return
+        # 스킴당 한 번만 만든다. 예전엔 접속자 수만큼 build_snapshot 을 돌렸다.
+        schemes = {self.scheme.get(ws, "kr") for ws in self.active}
+        snaps = {s: market.build_snapshot(*_colors_for(s)) for s in schemes}
+        patches = {s: self._diff(self.last_sent.get(s), snap) for s, snap in snaps.items()}
+
         dead = []
         for ws in list(self.active):
+            scheme = self.scheme.get(ws, "kr")
+            if ws in self.legacy:
+                payload = snaps.get(scheme)
+            else:
+                patch = patches.get(scheme)
+                # 바뀐 게 하나도 없으면 아예 보내지 않는다. 시세 폴링이
+                # 실패한 틱에서는 asOf 조차 갱신되지 않아 여기에 걸린다.
+                if not patch:
+                    continue
+                payload = {"type": "patch", "data": patch}
             try:
-                await self.send_snapshot(ws)
+                await ws.send_json(payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
+        self.last_sent.update(snaps)
 
 
 manager = ConnectionManager()
@@ -236,9 +284,11 @@ async def startup() -> None:
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket) -> None:
     scheme = websocket.query_params.get("scheme", "kr")
-    await manager.connect(websocket, scheme)
+    # delta=1 은 새 app.js 만 붙인다. 없으면 옛 클라이언트로 보고 통짜로 보낸다.
+    delta = websocket.query_params.get("delta") == "1"
+    await manager.connect(websocket, scheme, delta)
     try:
-        await manager.send_snapshot(websocket)
+        await manager.send_full(websocket)
         while True:
             # Clients don't need to send anything; keep the connection
             # open and detect disconnects via recv().

@@ -1680,11 +1680,23 @@
   function connect() {
     setConn("connecting");
     const proto = location.protocol === "https:" ? "wss" : "ws";
-    const ws = new WebSocket(`${proto}://${location.host}/ws?scheme=kr`);
+    const ws = new WebSocket(`${proto}://${location.host}/ws?scheme=kr&delta=1`);
 
     ws.onopen = () => { setConn("up"); backoff = 1000; };
     ws.onmessage = (ev) => {
-      try { render(JSON.parse(ev.data)); } catch (e) { console.error("bad snapshot", e); }
+      // 서버는 접속 직후 한 번만 전체(full)를 보내고, 이후엔 직전 틱과 달라진
+      // 섹션만(patch) 보낸다 — 스냅샷 210KB 중 10초 사이에 실제로 바뀌는 건
+      // 시세 몇 KB뿐이라 통째로 받으면 나머지가 그대로 낭비된다. render() 는
+      // 완전한 스냅샷을 전제로 하므로 여기서 직전 상태에 덧발라 복원한다.
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "patch") {
+          if (!latest) return;  // full 보다 먼저 올 일은 없지만, 오면 버린다
+          render(Object.assign({}, latest, msg.data));
+        } else {
+          render(msg.type === "full" ? msg.data : msg);
+        }
+      } catch (e) { console.error("bad snapshot", e); }
     };
     ws.onclose = () => {
       setConn("down");
