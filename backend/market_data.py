@@ -27,6 +27,7 @@ import fx_bond_issue
 import fx_news
 import keyword_news
 import kospi200_basis
+import kr_index
 import kr_investor_flow
 import kr_movers
 import kr_rates
@@ -435,6 +436,10 @@ class MarketData:
         futures. Reading both from the quote endpoint fixes both, and
         also makes the board agree with the popups, which read the same
         fields per symbol.
+
+        The one exception is the three KRX indices, which Yahoo delays by
+        20 minutes and Naver publishes live — those get overwritten from
+        Naver below (see kr_index).
         """
         symbols = self.all_symbols()
         try:
@@ -448,6 +453,14 @@ class MarketData:
             except Exception:
                 log.exception("poll_prices failed — keeping last known values")
                 return
+
+        # Live KOSPI/KOSDAQ/KOSPI200 on top of Yahoo's 20-minute-delayed
+        # quotes. Whatever Naver doesn't return keeps the Yahoo value —
+        # delayed still beats a blank row.
+        try:
+            quotes.update(kr_index.fetch_prices())
+        except Exception:
+            log.exception("naver index poll failed — keeping delayed Yahoo quotes")
 
         now = time.time()
         for sym, (price, prev) in quotes.items():
