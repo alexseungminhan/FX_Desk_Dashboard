@@ -122,9 +122,14 @@ def _last_business_day_of_month(y: int, m: int) -> date:
     return _prev_business_day(date(y, m, _cal.monthrange(y, m)[1]))
 
 
-def spot_date(trade_date: date) -> date:
-    """거래일 → 스팟(T+2). 양 캘린더 공통 영업일로 두 칸 민다."""
-    d = trade_date
+def spot_date(quote_date: date) -> date:
+    """**고시일** → 스팟(T+2). 양 캘린더 공통 영업일로 두 칸 민다.
+
+    인자는 실행 시각이 아니라 **스왑포인트 고시일**이다. 스왑포인트는 전영업일
+    고시분을 받아 쓰므로 실행일에서 T+2 를 잡으면 스팟이 하루 밀리고, 그
+    하루가 1M basis 를 1.5bp 움직인다 (1Y 는 0.24bp). 호출부는 스크래핑에서
+    파싱한 고시일자를 넘겨야 한다."""
+    d = quote_date
     for _ in range(2):
         d = _next_business_day(d + timedelta(days=1))
     return d
@@ -145,14 +150,31 @@ def value_date(spot: date, months: int) -> date:
     return _modified_following(_add_months(spot, months))
 
 
-def tenor_schedule(trade_date: date | None = None) -> dict:
+def quarterly_schedule(spot: date, n_quarters: int = 4) -> list[dict]:
+    """스팟에서 3개월 간격 지급일 [{'value', 'days'}, ...].
+
+    par swap rate 의 annuity 에 들어갈 날짜다. KRW IRS 지급 관습이 분기이고
+    날짜 규칙(월말 우선 · modified following)은 밸류데이트와 같으므로
+    `value_date` 를 그대로 3·6·9·12개월에 태운다 — 그래야 3M/6M/1Y 그리드
+    점이 같은 만기의 FX 밸류데이트와 정확히 일치한다."""
+    return [{"value": v, "days": (v - spot).days}
+            for v in (value_date(spot, 3 * i) for i in range(1, n_quarters + 1))]
+
+
+def tenor_schedule(quote_date: date | None = None) -> dict:
     """{'spot': date, 'tenors': {'1M': {'value': date, 'days': int}, ...},
-    'approx': bool}. `days` 는 스팟 → 밸류데이트 실제 경과일수(ACT).
+    'quarters': [{'value','days'}, ...], 'approx': bool}.
+    `days` 는 스팟 → 밸류데이트 실제 경과일수(ACT).
+
+    인자는 **고시일**이다 (spot_date 참고). 기본값 today 는 고시일을 못 구한
+    경우의 최후 수단일 뿐이고, 정상 경로에서는 호출부가 파싱한 고시일을 준다.
+
+    `quarters` 는 par rate annuity 용 분기 그리드(3M·6M·9M·1Y).
 
     approx=True 면 밸류데이트 하나 이상이 휴일표 밖이라 일수가 주말만 반영한
     근사치라는 뜻이다 — 호출부는 이걸 화면에 표시해야 한다."""
-    trade_date = trade_date or date.today()
-    spot = spot_date(trade_date)
+    quote_date = quote_date or date.today()
+    spot = spot_date(quote_date)
 
     out: dict[str, dict] = {}
     approx = not covered(spot)
@@ -162,12 +184,14 @@ def tenor_schedule(trade_date: date | None = None) -> dict:
             approx = True
         out[label] = {"value": v, "days": (v - spot).days}
 
+    quarters = quarterly_schedule(spot, 4)
+
     if approx:
         log.warning(
             "value date outside holiday table %s..%s — ACT day counts are approximate",
             COVERAGE_START, COVERAGE_END,
         )
-    return {"spot": spot, "tenors": out, "approx": approx}
+    return {"spot": spot, "tenors": out, "quarters": quarters, "approx": approx}
 
 
 if __name__ == "__main__":   # python fx_calendar.py [YYYY-MM-DD]
@@ -175,7 +199,9 @@ if __name__ == "__main__":   # python fx_calendar.py [YYYY-MM-DD]
 
     td = date.fromisoformat(sys.argv[1]) if len(sys.argv) > 1 else date.today()
     sch = tenor_schedule(td)
-    print(f"거래일 {td}  스팟 {sch['spot']}"
+    print(f"고시일 {td}  스팟 {sch['spot']}"
           f"{'  (일수 근사)' if sch['approx'] else ''}")
     for k, v in sch["tenors"].items():
         print(f"  {k:>3}  밸류 {v['value']}  ACT {v['days']:>3}일")
+    print("  분기 그리드:", "  ".join(
+        f"{q['value']} ({q['days']}일)" for q in sch["quarters"]))

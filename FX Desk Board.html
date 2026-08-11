@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=12">
+<link rel="stylesheet" href="/static/styles.css?v=14">
 <style>
   .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
   .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
@@ -123,7 +123,7 @@
   #swap-table{min-width:700px}
   #irscrs-table,#bondirs-table{min-width:480px}
   /* FX-implied 원화금리·CCS 베이시스:
-     만기 | 일수 | swap rate | USD | implied yield | IRS | basis.
+     만기 | 일수 | swap rate | USD | par yield | IRS | basis.
      basis 만 부호가 뜻을 가지므로 왼쪽에 옅은 칸막이를 세워 레벨 칸들과
      갈라 놓는다 — 눈이 "여기부터가 결론"으로 읽게 한다. */
   .fi-row{display:grid;grid-template-columns:52px 44px repeat(5,1fr);align-items:center;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
@@ -622,6 +622,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=12"></script>
+<script src="/static/app.js?v=14"></script>
 </body>
 </html>

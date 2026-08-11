@@ -12,10 +12,18 @@
 
 **연율 환산** — 스왑포인트 고시 단위는 전(錢, 0.01원):
 
-    연율(%) = 스왑포인트(원) / 현물환율 × 365/일수 × 100
+    연율(%) = 스왑포인트(원) / 현물환율 × 360/일수 × 100
 
-현물 USD/KRW 는 보드가 이미 야후에서 받고 있어 그 값을 넘겨받고, 각
-중개사 Mid 로 각각 환산한다.
+FX 스왑 연율은 베이스 통화(USD) 머니마켓 관습을 따라 ACT/360 이다. 데스크
+pricer 의 `Swap rate` 열은 같은 값을 ACT/365 로 적으므로 전 만기가 일률적으로
+365/360 = 1.39% 만큼 다르게 보인다 — 나란히 볼 때 헷갈리지 않도록 화면 각주에
+명시한다.
+
+**스팟은 고시일 스냅샷을 쓴다.** 스왑포인트는 전영업일 고시분인데 스팟만
+실시간을 붙이면 시점이 어긋난다 (실측 3.6원 = 1Y yield 0.23bp). 그래서
+고시일자를 같이 파싱해 (1) 스팟일을 고시일 기준 T+2 로 잡고 (2) 스팟 레벨도
+그 날 종가를 쓴다. 실시간 스팟은 참고로만 따로 들고 다닌다
+(`spot` / `spotSource` / `spotAsOf` / `spotLive`).
 
 **IRS·CRS 커브** 는 만기가 많은 KMB(7개)를 기본으로 쓰고, KMB 가 죽으면
 SMBS(3개)로 내려간다. CRS-IRS 가 곧 통화베이시스다.
@@ -23,12 +31,16 @@ SMBS(3개)로 내려간다. CRS-IRS 가 곧 통화베이시스다.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
+
+import requests
 
 import fx_calendar
 import fx_implied
 import kmb
 import smbs
+import ttl_cache
 import usd_rates
 
 log = logging.getLogger("krw_swap")
@@ -51,11 +63,82 @@ _SMBS_TERMS = ["1Y", "3Y", "5Y"]
 
 _LOOKBACK_DAYS = 14   # 연휴를 넘겨 최근 고시일을 잡을 만큼
 
+# 고시일 스팟(매매기준율) — 네이버 시장지표 일별 시세. 20행이면 연휴를 넘겨도
+# 고시일이 안에 든다.
+_NAVER_FX_URL = "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW/prices"
+_NAVER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+    ),
+    "Referer": "https://m.stock.naver.com/",
+}
+
 
 def _range() -> str:
     end = datetime.now(tz=KST).date()
     start = end - timedelta(days=_LOOKBACK_DAYS)
     return f"{start.isoformat()}_{end.isoformat()}"
+
+
+_DATE_SEP = re.compile(r"(\d{2,4})[.\-/](\d{1,2})[.\-/](\d{1,2})")
+_DATE_COMPACT = re.compile(r"(\d{4})(\d{2})(\d{2})")
+
+
+def parse_quote_date(as_of: str | None) -> date | None:
+    """중개사 페이지의 기준일 문자열 → date.
+
+    SMBS 는 차트 축 라벨이라 "26.08.10", KMB 는 날짜 input 이라 "2026-08-10"
+    꼴로 온다. 구분자가 있는 꼴을 먼저 보고 없으면 20260810 로 읽으며, 두 자리
+    연도는 2000년대로 편다. 이 날짜가 스팟일(T+2)과 스팟 레벨의 기준점이므로
+    못 읽으면 조용히 today 로 떨어지지 않고 None 을 돌려 호출부가 그 사실을
+    알게 한다."""
+    if not as_of:
+        return None
+    text = as_of.strip()
+    m = _DATE_SEP.search(text) or _DATE_COMPACT.search(text)
+    if not m:
+        return None
+    y, mo, d = (int(g) for g in m.groups())
+    if y < 100:
+        y += 2000
+    try:
+        return date(y, mo, d)
+    except ValueError:
+        return None
+
+
+def _quote_date_spot(quote_date: date) -> tuple[float, str] | None:
+    """고시일 USD/KRW **매매기준율**과 그 날짜. 네이버 시장지표 일별 시세.
+
+    야후 일봉 종가로도 해 봤지만 USDKRW=X 는 일봉 경계가 어긋나 고시일 값이
+    10원 넘게 튀는 날이 있다 — 실시간 스팟보다 오히려 나빠진다. 네이버가
+    주는 건 서울 매매기준율이고, 검증일(2026-08-10) 기준 1,419.50 으로
+    pricer 역산치(1418.9)와 0.6원 안에 든다.
+
+    하루에 한 번만 바뀌는 값이라 캐시를 넉넉히 잡는다."""
+    def _fetch():
+        r = requests.get(_NAVER_FX_URL, params={"page": 1, "pageSize": 20},
+                         headers=_NAVER_HEADERS, timeout=10)
+        r.raise_for_status()
+        # 최신일이 앞. 고시일 이하 첫 행이 그 날(또는 직전 영업일) 기준율이다.
+        for row in r.json():
+            stamp = row.get("localTradedAt", "")
+            try:
+                d = date.fromisoformat(stamp)
+            except ValueError:
+                continue
+            if d > quote_date:
+                continue
+            px = float(str(row.get("closePrice", "")).replace(",", ""))
+            return (px, stamp)
+        return None
+
+    try:
+        return ttl_cache.get_or_fetch(f"usdkrw-mar:{quote_date}", 3600, _fetch)
+    except Exception:
+        log.exception("quote-date USD/KRW 매매기준율 fetch failed")
+        return None
 
 
 def _annualized(point_jeon: float | None, spot: float | None, days: int | None) -> float | None:
@@ -93,8 +176,12 @@ def _smbs_points() -> tuple[dict[str, dict], str]:
     return out, as_of
 
 
-def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
-    """양사 스왑포인트. 한쪽이 죽어도 남은 쪽으로 표를 만든다."""
+def fetch_swap_points(spot_live: float | None) -> dict | None:
+    """양사 스왑포인트. 한쪽이 죽어도 남은 쪽으로 표를 만든다.
+
+    spot_live 는 보드가 들고 있는 실시간 USD/KRW 다. 연율 환산과 implied 계산에
+    쓰는 스팟은 **고시일 종가**이고, 실시간 값은 그걸 못 구했을 때의 대체이자
+    참고 열(spotLive)이다."""
     smbs_pts: dict[str, dict] = {}
     kmb_pts: dict[str, dict] = {}
     as_of = ""
@@ -112,7 +199,23 @@ def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
     if not smbs_pts and not kmb_pts:
         return None
 
-    sched = fx_calendar.tenor_schedule()
+    # 고시일이 모든 날짜의 기준점이다 — 스팟일(T+2)도, 스팟 레벨도. 못 읽으면
+    # 실행일로 떨어지되 그 사실을 화면까지 들고 간다.
+    quote_date = parse_quote_date(as_of)
+    quote_parsed = quote_date is not None
+    if not quote_parsed:
+        quote_date = datetime.now(tz=KST).date()
+        log.warning("quote date unparsed from %r — falling back to today", as_of)
+
+    sched = fx_calendar.tenor_schedule(quote_date)
+
+    close = _quote_date_spot(quote_date) if quote_parsed else None
+    if close:
+        spot, spot_source, spot_as_of = close[0], "고시일 매매기준율", close[1]
+    else:
+        spot, spot_source, spot_as_of = spot_live, "실시간", ""
+        if quote_parsed:
+            log.warning("quote-date close unavailable — using live spot %s", spot_live)
 
     rows = []
     for label, _key in TENORS:
@@ -128,11 +231,11 @@ def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
             "valueDate": leg["value"].isoformat() if leg.get("value") else None,
             "smbs": {
                 **(s or {"bid": None, "offer": None, "mid": None}),
-                "annualized": _annualized(s["mid"] if s else None, spot_usdkrw, days),
+                "annualized": _annualized(s["mid"] if s else None, spot, days),
             },
             "kmb": {
                 **(k or {"bid": None, "offer": None, "mid": None}),
-                "annualized": _annualized(k["mid"] if k else None, spot_usdkrw, days),
+                "annualized": _annualized(k["mid"] if k else None, spot, days),
             },
         })
 
@@ -140,9 +243,16 @@ def fetch_swap_points(spot_usdkrw: float | None) -> dict | None:
         return None
     return {
         "asOf": as_of,
-        "spot": spot_usdkrw,
+        "quoteDate": quote_date.isoformat(),
+        "quoteDateParsed": quote_parsed,
+        "spot": spot,
+        "spotSource": spot_source,
+        "spotAsOf": spot_as_of,
+        "spotLive": spot_live,
         "rows": rows,
         "spotDate": sched["spot"].isoformat(),
+        # par rate annuity 용 분기 그리드 (3M·6M·9M·1Y).
+        "quarterDays": [q["days"] for q in sched["quarters"]],
         "daysApprox": sched["approx"],
     }
 
@@ -253,10 +363,14 @@ def fetch_implied(swap_points: dict | None, irs_crs: dict | None,
     days = {r["label"]: r["days"] for r in swap_points["rows"] if r.get("days")}
     if not days:
         return None
-    # 9M 은 표에 없지만 6M 보간 필러로 쓰이므로 일수만 캘린더에서 챙겨 둔다.
-    nine = fx_calendar.tenor_schedule()["tenors"].get("9M")
-    if nine:
-        days["9M"] = nine["days"]
+
+    # 분기 그리드와 9M 일수는 **같은 고시일 스케줄**에서 나와야 한다 — 여기서
+    # 캘린더를 today 로 다시 부르면 스팟이 하루 어긋나 앞의 수정이 무의미해진다.
+    quarter_days = swap_points.get("quarterDays") or []
+    if quarter_days:
+        # 9M 은 표에 없지만 6M IRS 보간 필러로 일수가 필요하다 (3번째 분기).
+        days.setdefault("9M", quarter_days[2] if len(quarter_days) > 2 else None)
+        days = {k: v for k, v in days.items() if v}
 
     usd = usd_rates.fetch_usd_curve(days)
     if not usd:
@@ -272,14 +386,27 @@ def fetch_implied(swap_points: dict | None, irs_crs: dict | None,
             cd_rate=cd_rate_pct / 100,
             irs_1y=irs_1y_pct / 100,
             irs_9m=None,
-            convention_adjust=True,
+            quarter_days=quarter_days or None,
         )
     except Exception:
         log.exception("fx_implied.compute failed")
         return None
 
+    # 입력이 어긋났을 때만 뜨는 경고 — 상시 표시하는 6M 보간 안내와 달리 화면에
+    # 올라오면 그 자체가 이상신호라 따로 담는다.
+    data_warnings: list[str] = []
     if swap_points.get("daysApprox"):
-        res["warnings"].insert(0, "밸류데이트가 휴일표 범위 밖이라 일수가 근사치다.")
+        data_warnings.append("밸류데이트가 휴일표 범위 밖이라 일수가 근사치다.")
+    if not swap_points.get("quoteDateParsed", True):
+        data_warnings.append(
+            "고시일자를 못 읽어 실행일 기준 T+2 로 스팟일을 잡았다 — "
+            "고시가 전영업일자면 일수가 하루씩 밀려 1M basis 가 1.5bp 움직인다.")
+    if swap_points.get("spotSource") == "실시간":
+        data_warnings.append(
+            "고시일 종가를 못 구해 실시간 스팟을 썼다 — 스왑포인트(전영업일 고시)와 "
+            "시점이 어긋난다 (1Y yield 기준 3~4원당 0.2bp).")
+    res["warnings"] = data_warnings + res["warnings"]
+    res["dataWarnings"] = data_warnings
 
     res["usd"] = usd
     # 스왑포인트 출처. 전 만기 KMB 면 "KMB", 섞이면 그 사실을 그대로 내보낸다.
@@ -287,6 +414,9 @@ def fetch_implied(swap_points: dict | None, irs_crs: dict | None,
     res["pointSource"] = "KMB" if srcs == {"KMB"} else " · ".join(
         f"{t} {s}" for t, s in point_src.items())
     res["spotDate"] = swap_points.get("spotDate")
+    res["quoteDate"] = swap_points.get("quoteDate", "")
+    res["spotSource"] = swap_points.get("spotSource", "")
+    res["spotAsOf"] = swap_points.get("spotAsOf", "")
     res["asOf"] = swap_points.get("asOf", "")
     res["valueDates"] = {r["label"]: r.get("valueDate") for r in swap_points["rows"]}
     return res

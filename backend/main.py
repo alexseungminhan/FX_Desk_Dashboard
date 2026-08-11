@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, time as _time, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
@@ -30,17 +31,32 @@ log = logging.getLogger("fx-desk-board")
 PRICE_POLL_SECONDS = 10
 NEWS_POLL_SECONDS = 300
 KR_RATES_POLL_SECONDS = 600
-MOVERS_POLL_SECONDS = 60
+# 순위표는 네이버 sise_rise/sise_fall 페이지가 한 장에 1MB 짜리 HTML 이고
+# 코스피·코스닥 두 번씩 받는다 — 한 바퀴에 3.7MB 다. 60초로 돌리면 시간당
+# 224MB 인데 순위가 1분 단위로 의미 있게 바뀌지도 않아 180초로 둔다.
+MOVERS_POLL_SECONDS = 180
 KR_MOST_TRADED_POLL_SECONDS = 60
 US_MOVERS_POLL_SECONDS = 90
 # 수급은 일별 확정치라 자주 볼 이유가 없고, 키워드 뉴스는 검색 스로틀 때문에
 # 한 바퀴가 길다 — 둘 다 느리게 돈다. 베이시스는 현·선물 가격이라 시세급.
 INVESTOR_FLOW_POLL_SECONDS = 300
-KEYWORD_NEWS_POLL_SECONDS = 600
+# 키워드 뉴스 한 바퀴는 검색 35건 x 평균 348KB = 12MB 다. 600초면 시간당
+# 72MB 라 대역폭에서 두 번째로 큰 항목이었다 — 뉴스가 10분 단위로 바뀌는
+# 물건도 아니라 30분으로 늘린다.
+KEYWORD_NEWS_POLL_SECONDS = 1800
 KEYWORD_NEWS_START_DELAY_SECONDS = 25
 BASIS_POLL_SECONDS = 60
 # SEIBro·KOFIA 는 일별 확정치라 자주 부를 이유가 없다.
 DAILY_SOURCES_POLL_SECONDS = 1800
+
+# 국내 순위·수급 폴은 이 창(한국시간) 안에서만 돈다. 장 밖에서 매분 긁어 봐야
+# 같은 표를 다시 받을 뿐인데, 그게 대역폭의 대부분이었다 (24시간 x 3.7MB/분).
+# 08:30 은 장 개시 30분 전(시간외·예상체결 구간), 18:00 은 시간외 종가매매까지
+# 끝난 뒤다. 주말은 통째로 쉰다. 공휴일까지는 안 본다 — 휴일에 한 번 더 받는
+# 비용이 캘린더를 물려 놓는 값보다 싸다.
+KST = timezone(timedelta(hours=9))
+KR_SESSION_START = _time(8, 30)
+KR_SESSION_END = _time(18, 0)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
@@ -163,22 +179,42 @@ async def _price_loop() -> None:
         await asyncio.sleep(PRICE_POLL_SECONDS)
 
 
-async def _movers_loop() -> None:
+def kr_session_open(now: datetime | None = None) -> bool:
+    """지금이 국내 순위·수급을 받아올 시간대인가 (평일 08:30~18:00 KST)."""
+    now = (now or datetime.now(tz=KST)).astimezone(KST)
+    if now.weekday() >= 5:          # 토·일
+        return False
+    return KR_SESSION_START <= now.time() <= KR_SESSION_END
+
+
+async def _kr_session_loop(name: str, poll, interval: int) -> None:
+    """장 시간에만 도는 루프. 장 밖에서는 요청을 아예 내지 않는다.
+
+    화면이 비지는 않는다 — 기동 시 seed 로 한 번은 받아 두므로 장 밖에는
+    직전 장의 확정치가 그대로 걸려 있고, 개장하면 한 주기 안에 갱신된다.
+    상태가 바뀔 때만 로그를 남긴다 (매 틱마다 찍으면 로그가 그것만 남는다)."""
+    was_open: bool | None = None
     while True:
-        try:
-            await asyncio.to_thread(market.poll_movers)
-        except Exception:
-            log.exception("movers loop iteration failed")
-        await asyncio.sleep(MOVERS_POLL_SECONDS)
+        open_now = kr_session_open()
+        if open_now:
+            try:
+                await asyncio.to_thread(poll)
+            except Exception:
+                log.exception("%s loop iteration failed", name)
+        if open_now != was_open:
+            log.info("%s: %s", name,
+                     "장중 — 폴링 재개" if open_now else "장 밖 — 폴링 중단 (평일 08:30~18:00 KST 만 수집)")
+            was_open = open_now
+        await asyncio.sleep(interval)
+
+
+async def _movers_loop() -> None:
+    await _kr_session_loop("movers", market.poll_movers, MOVERS_POLL_SECONDS)
 
 
 async def _kr_most_traded_loop() -> None:
-    while True:
-        try:
-            await asyncio.to_thread(market.poll_kr_most_traded)
-        except Exception:
-            log.exception("kr most-traded loop iteration failed")
-        await asyncio.sleep(KR_MOST_TRADED_POLL_SECONDS)
+    await _kr_session_loop("kr most-traded", market.poll_kr_most_traded,
+                           KR_MOST_TRADED_POLL_SECONDS)
 
 
 async def _us_movers_loop() -> None:
@@ -210,12 +246,8 @@ async def _kr_rates_loop() -> None:
 
 
 async def _investor_flow_loop() -> None:
-    while True:
-        try:
-            await asyncio.to_thread(market.poll_investor_flow)
-        except Exception:
-            log.exception("investor flow loop iteration failed")
-        await asyncio.sleep(INVESTOR_FLOW_POLL_SECONDS)
+    await _kr_session_loop("investor flow", market.poll_investor_flow,
+                           INVESTOR_FLOW_POLL_SECONDS)
 
 
 async def _keyword_news_loop() -> None:

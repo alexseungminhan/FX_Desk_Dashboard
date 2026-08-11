@@ -1066,6 +1066,11 @@ class MarketData:
             swap_rows = {
                 "asOf": sp["asOf"],
                 "spot": f"{sp['spot']:,.2f}" if sp["spot"] else "—",
+                # 연율 환산에 쓴 스팟이 고시일 종가인지 실시간인지 — 스왑포인트가
+                # 전영업일 고시라 이게 어긋나면 연율이 통째로 밀린다.
+                "spotSource": sp.get("spotSource", ""),
+                "spotAsOf": sp.get("spotAsOf", ""),
+                "spotLive": f"{sp['spotLive']:,.2f}" if sp.get("spotLive") else "",
                 "rows": [
                     {
                         "label": r["label"],
@@ -1104,16 +1109,19 @@ class MarketData:
             implied_rows = {
                 "asOf": fi.get("asOf", ""),
                 "spotDate": fi.get("spotDate", ""),
+                "quoteDate": fi.get("quoteDate", ""),
+                "spotSource": fi.get("spotSource", ""),
+                "spotAsOf": fi.get("spotAsOf", ""),
                 "usdSource": usd["sourceLabel"],
                 "usdAsOf": usd.get("asOf", ""),
                 "usdNote": usd.get("note", ""),
                 "pointSource": fi.get("pointSource", ""),
-                # 화면에는 6M 이 보간이라는 사실만 한 줄로 남긴다. 보간 폭은
-                # 바로 위 방식별 값 줄에 이미 찍히고, 컨벤션(ACT/360 대
-                # ACT/365) 얘기는 조정 basis 열 자체가 답이라 또 적으면 중복이다.
+                # 화면에는 6M 이 보간이라는 사실 한 줄 + 입력이 어긋났을 때의
+                # 데이터 경고만 올린다. 보간 폭은 바로 위 방식별 값 줄에 이미
+                # 찍히고, 컨벤션 얘기는 par 열과 각주가 답이라 또 적으면 중복이다.
                 # fx_implied 는 경고를 전부 계속 계산하므로 로그에는 남는다.
                 "warnings": ([f"6M IRS 는 고시가 없어 보간값이다 ({six['method']})."]
-                             if six else []),
+                             if six else []) + fi.get("dataWarnings", []),
                 "sixMethod": six["method"] if six else "",
                 "sixSpreadBp": f"{six['spreadBp']:.1f}bp" if six else "",
                 "sixVariants": [
@@ -1129,10 +1137,15 @@ class MarketData:
                         "valueDate": (fi.get("valueDates", {}).get(r["label"]) or "")[5:],
                         "swapRate": _pct(r["swapRate"]),
                         "usdRate": _pct(r["usdRate"], 4),
-                        "yield": _pct(r["impliedYield"], 4),
+                        # 화면 값은 par swap rate — KRW IRS 고시와 같은 물건이다.
+                        # 단리 zero 는 pricer `KRW Zero` 대조용 검증열로 나란히 둔다.
+                        "yield": _pct(r["parRate"], 4),
+                        "yieldSimple": _pct(r["yieldSimple"], 4),
                         "irs": _pct(r["irs"], 3),
                         "irsSource": r["irsSource"],
                         "interpolated": r["interpolated"],
+                        # 분기 그리드에 보간으로 채운 점이 있으면(1Y 의 9M) 표시.
+                        "pillarSource": r.get("pillarSource", ""),
                         "basis": _bp(r["basisBp"]),
                         "basisColor": (
                             flat if not r["basisBp"]

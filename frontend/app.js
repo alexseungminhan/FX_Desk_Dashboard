@@ -494,7 +494,10 @@
           <span style="font-weight:500">${esc(r.label)}</span>
           ${group(r.smbs, "s")}${group(r.kmb, "k")}
         </div>`).join(""));
-      $("swap-spot").textContent = `· 현물 USD/KRW ${sp.spot} 기준 · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 를 ACT/360 실제일수로 환산`;
+      $("swap-spot").textContent =
+        `· 현물 USD/KRW ${sp.spot}${sp.spotSource ? ` (${sp.spotSource}${sp.spotAsOf ? ` ${sp.spotAsOf}` : ""})` : ""} 기준`
+        + (sp.spotLive && sp.spotLive !== sp.spot ? ` · 실시간 ${sp.spotLive}` : "")
+        + ` · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 를 ACT/360 실제일수로 환산`;
     }
 
     // FX-implied 원화금리 · CCS 베이시스 — 스왑포인트를 금리로 편 것.
@@ -509,9 +512,13 @@
       setHtml($("fximplied-warn"), "");
       $("fximplied-src").textContent = "";
     } else {
+      // 화면 값은 par yield 하나다. 단리 zero 는 payload 에 그대로 있지만
+      // (pricer `KRW Zero` 대조·회귀테스트용) 표에는 안 올린다 — 데스크가
+      // 읽는 건 IRS 와 같은 물건인 par 쪽이고, 두 금리를 나란히 두면 어느 게
+      // 결론인지 흐려진다.
       const head = `<div class="fi-row fi-head"><span>만기</span><span class="sw-num">일수</span>
         <span class="sw-num">swap rate</span><span class="sw-num">USD</span>
-        <span class="sw-num">implied yield</span><span class="sw-num">KRW IRS</span>
+        <span class="sw-num">par yield</span><span class="sw-num">KRW IRS</span>
         <span class="sw-num">basis</span></div>`;
       setHtml(fiBox, head + fi.rows.map((r) => `
         <div class="fi-row${r.interpolated ? " fi-interp" : ""}">
@@ -535,7 +542,9 @@
       setHtml($("fximplied-warn"),
         (fi.warnings || []).map((w) => `<div>${esc(w)}</div>`).join(""));
       $("fximplied-src").textContent =
-        `· 스왑포인트·IRS ${fi.pointSource} 고시 · 스팟 ${fi.spotDate} 기준`
+        `· 스왑포인트·IRS ${fi.pointSource} ${fi.quoteDate || ""} 고시`
+        + ` · 스팟일 ${fi.spotDate} (고시일 T+2)`
+        + (fi.spotSource ? ` · 스팟 ${fi.spotSource}${fi.spotAsOf ? ` ${fi.spotAsOf}` : ""}` : "")
         + ` · USD ${fi.usdSource} ${fi.usdAsOf}`;
     }
 
@@ -580,10 +589,12 @@
     const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
     $("swap-asof").textContent = stamp ? `${stamp} 고시` : "";
     $("swap-foot").textContent =
-      "스왑포인트 단위 전(1전 = 0.01원) · swap rate = 포인트/현물 × 360/실제일수 (FX 관습 ACT/360) · "
-      + "implied yield = {(1 + 포인트/현물)(1 + USD × 일수/360) − 1} × 365/일수 · "
-      + "yield 를 원화 관습(ACT/365)으로 연율화해 KRW IRS·CD 와 분모를 맞췄으므로 "
-      + "basis = yield − IRS 로 그냥 빼면 되고 별도 컨벤션 보정이 필요 없다 · "
+      "스왑포인트 단위 전(1전 = 0.01원) · 스팟일·스팟 레벨 모두 고시일 기준 (스왑포인트가 전영업일 고시라 실시간 스팟과 섞으면 시점이 어긋난다) · "
+      + "swap rate = 포인트/현물 × 360/실제일수 (FX 관습 ACT/360 — 데스크 pricer 는 같은 값을 ACT/365 로 적어 365/360 = 1.39% 만큼 크게 보인다) · "
+      + "G = (1 + 포인트/현물)(1 + USD × 일수/360) − 1, DF = 1/(1 + G) · "
+      + "par yield = (1 − DF_N) / Σ DF_i·τ_i — 분기 그리드(3M·6M·9M·1Y, τ = 일수/365)에서 뽑은 par swap rate, 9M DF 는 log-linear 보간 · "
+      + "KRW IRS 고시 자체가 분기지급 par swap rate 라 basis = par − IRS 로 par 끼리 뺀다 (단리 zero G × 365/일수 를 그대로 빼면 6M −1.2bp, 1Y −3.9bp 만큼 구조적으로 벌어진다) · "
+      + "3M 이하는 지급이 한 번뿐이라 par 가 단리 zero 와 같은 값이 된다 · "
       + "IRS·CRS·국고채 단위 % · 국고채는 KOFIA 최종호가";
   }
 
