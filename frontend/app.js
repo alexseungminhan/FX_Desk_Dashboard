@@ -191,13 +191,13 @@
     if (fxNewsPage > totalPages) fxNewsPage = totalPages;
     const start = (fxNewsPage - 1) * FX_NEWS_PAGE_SIZE;
 
+    // 시각·제목이 목록 전체를 덮는 격자의 두 칸이다 (.nws-list) — 행마다
+    // div 로 묶지 않아야 시각 칸 폭이 목록 전체에서 하나로 정해진다.
     setHtml($("fx-news-list"), fxNewsRows.slice(start, start + FX_NEWS_PAGE_SIZE).map((n) => `
-      <div style="display:flex;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06)">
-        <span class="mono" style="font-size:10.5px;color:var(--c-label);min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
-        <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
-          ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
-          <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
-        </div>
+      <span class="mono nws-when">${esc(n.time)}</span>
+      <div class="nws-body">
+        ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
+        <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
       </div>`).join(""));
 
     renderPagination("fx-news-pagination", fxNewsPage, totalPages, (p) => {
@@ -588,14 +588,6 @@
 
     const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
     $("swap-asof").textContent = stamp ? `${stamp} 고시` : "";
-    $("swap-foot").textContent =
-      "스왑포인트 단위 전(1전 = 0.01원) · 스팟일·스팟 레벨 모두 고시일 기준 (스왑포인트가 전영업일 고시라 실시간 스팟과 섞으면 시점이 어긋난다) · "
-      + "swap rate = 포인트/현물 × 360/실제일수 (FX 관습 ACT/360 — 데스크 pricer 는 같은 값을 ACT/365 로 적어 365/360 = 1.39% 만큼 크게 보인다) · "
-      + "G = (1 + 포인트/현물)(1 + USD × 일수/360) − 1, DF = 1/(1 + G) · "
-      + "par yield = (1 − DF_N) / Σ DF_i·τ_i — 분기 그리드(3M·6M·9M·1Y, τ = 일수/365)에서 뽑은 par swap rate, 9M DF 는 log-linear 보간 · "
-      + "KRW IRS 고시 자체가 분기지급 par swap rate 라 basis = par − IRS 로 par 끼리 뺀다 (단리 zero G × 365/일수 를 그대로 빼면 6M −1.2bp, 1Y −3.9bp 만큼 구조적으로 벌어진다) · "
-      + "3M 이하는 지급이 한 번뿐이라 par 가 단리 zero 와 같은 값이 된다 · "
-      + "IRS·CRS·국고채 단위 % · 국고채는 KOFIA 최종호가";
   }
 
   // -- 단기금융시장 금리 (CP · 전단채) ------------------------------------
@@ -978,13 +970,13 @@
     const start = (newsPage - 1) * NEWS_PAGE_SIZE;
     const shown = all.slice(start, start + NEWS_PAGE_SIZE);
 
+    // 환율 뉴스와 같은 격자 (.nws-list) — 시각 칸이 목록 전체에서 한 폭이라
+    // "08/17 14:05" 처럼 긴 시각이 섞여도 제목이 한 줄에서 시작한다.
     setHtml($("news-list"), shown.map((n) => `
-      <div style="display:flex;gap:11px;padding:7px 0;border-bottom:1px solid rgba(29,31,32,.06)">
-        <span class="mono" style="font-size:10.5px;color:var(--c-label);min-width:34px;white-space:nowrap;padding-top:2px">${esc(n.time)}</span>
-        <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
-          ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
-          <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
-        </div>
+      <span class="mono nws-when">${esc(n.time)}</span>
+      <div class="nws-body">
+        ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
+        <span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.tag)}</span>
       </div>`).join(""));
 
     $("news-empty").style.display = (latest && latest.news && latest.news.length > 0 && all.length === 0) ? "block" : "none";
