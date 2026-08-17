@@ -33,6 +33,7 @@ import kr_movers
 import kr_rates
 import krw_swap
 import naver_news
+import reserves_drains
 import short_term_rates
 import us_movers
 import yahoo_news
@@ -370,6 +371,7 @@ class MarketData:
         self.fx_implied: dict | None = None
         self.bond_quotes: dict | None = None
         self.short_term_rates: dict | None = None
+        self.reserve_drains: dict | None = None
 
     def all_symbols(self) -> list[str]:
         return list(FIXED_SYMBOLS)
@@ -702,6 +704,18 @@ class MarketData:
             log.warning("poll_short_term_rates returned nothing — keeping last known rates")
             return
         self.short_term_rates = data
+
+    def poll_reserve_drains(self) -> None:
+        """외환보유액 단기 유출예정액 (기재부 IMF 공표) — reserves_drains.py."""
+        try:
+            data = reserves_drains.fetch_reserve_drains()
+        except Exception:
+            log.exception("poll_reserve_drains failed — keeping last known table")
+            return
+        if not data:
+            log.warning("poll_reserve_drains returned nothing — keeping last known table")
+            return
+        self.reserve_drains = data
 
     def poll_movers(self) -> None:
         """Real KOSPI+KOSDAQ top gainers/losers from Naver Finance — see
@@ -1254,6 +1268,35 @@ class MarketData:
                 ],
             }
 
+        # -- 외환보유액 단기 유출예정액 (IMF 표 II) ---------------------
+        # 빈 칸은 원본에서 보고가 없는 자리라 0 이 아니다 — "—" 로 내보내고
+        # 화면에서도 값과 다른 색으로 물러나게 한다.
+        drain_rows = None
+        if self.reserve_drains:
+            rd = self.reserve_drains
+            drain_rows = {
+                "asOf": rd["asOf"],
+                "updated": rd["updated"],
+                "columns": rd["columns"],
+                "rows": [
+                    {
+                        "label": r["label"],
+                        "level": r["level"],
+                        "highlight": r["highlight"],
+                        "values": [
+                            "—" if v is None else f"{v:,.1f}" for v in r["values"]
+                        ],
+                        # 유출(음수)만 색을 준다. 부호가 곧 방향이라 숫자를
+                        # 하나하나 읽지 않고도 어느 줄이 나가는 돈인지 보인다.
+                        "signs": [
+                            "" if v is None or v == 0 else ("neg" if v < 0 else "pos")
+                            for v in r["values"]
+                        ],
+                    }
+                    for r in rd["rows"]
+                ],
+            }
+
         # -- 채권 수급 -------------------------------------------------
         # 주식 수급과 같은 색 규칙 (순매수 빨강 / 순매도 파랑). 단위가 이미
         # 억원이라 조 단위만 접는다.
@@ -1349,6 +1392,7 @@ class MarketData:
             "bondFlowPeriods": bond_flow.PERIODS,
             "bondQuotes": bond_quote_rows,
             "shortTermRates": short_term_rows,
+            "reserveDrains": drain_rows,
             "swapPoints": swap_rows,
             "fxImplied": implied_rows,
             "irsCrs": irs_crs_rows,

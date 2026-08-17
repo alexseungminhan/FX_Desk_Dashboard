@@ -627,6 +627,40 @@
     $("strate-foot").textContent = "단위 % · 만기구간별 가중평균금리 · 거래가 거의 없는 구간의 금리는 참고치";
   }
 
+  // -- 외환보유액 단기 유출예정액 (IMF 표 II) ----------------------------
+
+  function renderReserveDrains() {
+    if (!latest) return;
+    const rd = latest.reserveDrains;
+    const table = $("drain-table");
+    if (!rd || !rd.rows.length) {
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">유출예정액을 불러오지 못했습니다.</div>`);
+      $("drain-asof").textContent = "";
+      return;
+    }
+
+    // 머리행의 "구분" 칸도 rd-name 이다 — 가로로 밀 때 라벨 열과 같이 서 있어야
+    // 어느 열이 어느 만기구간인지 계속 읽힌다.
+    const head = `<div class="rd-row rd-head"><span class="rd-name">구분</span>${
+      rd.columns.map((c) => `<span class="rd-num">${esc(c)}</span>`).join("")}</div>`;
+
+    setHtml(table, head + rd.rows.map((r) => {
+      const cells = r.values.map((v, i) => {
+        const sign = r.signs[i];
+        const color = v === "—" ? "var(--c-empty)"
+          : sign === "neg" ? "#c0392b"
+          : sign === "pos" ? "var(--color-accent)" : "var(--c-dim)";
+        return `<span class="mono rd-num" style="color:${color}">${esc(v)}</span>`;
+      }).join("");
+      const cls = "rd-row"
+        + (r.level === 0 ? " rd-top" : " rd-sub")
+        + (r.highlight ? " rd-hi" : "");
+      return `<div class="${cls}"><span class="rd-name">${esc(r.label)}</span>${cells}</div>`;
+    }).join(""));
+
+    $("drain-asof").textContent = `${rd.asOf} 기준 · ${rd.updated} 공표`;
+  }
+
   // -- 채권 수익률 곡선 --------------------------------------------------
 
   function renderBondCurve() {
@@ -994,6 +1028,7 @@
     renderBondQuotes();
     renderKrwSwap();
     renderShortTermRates();
+    renderReserveDrains();
     renderBondCurve();
     renderFxBondIssues();
     renderBasis();
@@ -1716,5 +1751,69 @@
     };
     ws.onerror = () => ws.close();
   }
+  // -- 패널 접기 ------------------------------------------------------
+  // 주식 수급 아래로는(HTML 에서 .collapsible 이 붙은 패널) 기본이 접힘이다.
+  // 헤더를 누르면 펴지고, 편 패널 목록은 localStorage 에 남는다.
+  //
+  // 마크업을 여기서 한 겹 감싸는 이유: 패널마다 헤더 생김새가 제각각이라
+  // (.panel-head 인 것, 맨 h4 인 것, 클래스 없는 flex div 인 것) HTML 을
+  // 11군데 손으로 고치는 것보다 "첫 요소가 헤더, 나머지가 본문" 이라는
+  // 한 가지 규칙으로 처리하는 편이 낫다. 패널이 늘어도 클래스만 붙이면 된다.
+  const COLLAPSE_KEY = "fxdesk.openPanels";
+
+  function initCollapsibles() {
+    let open = [];
+    try {
+      open = JSON.parse(localStorage.getItem(COLLAPSE_KEY)) || [];
+    } catch (e) { /* 저장값이 깨졌으면 기본(전부 접힘)으로 간다 */ }
+
+    document.querySelectorAll(".panel.collapsible").forEach((panel) => {
+      // .corner 는 .blueprint 의 직계 자식이어야 모서리 표시가 산다 — 그대로 둔다.
+      const kids = [...panel.children].filter((el) => !el.classList.contains("corner"));
+      const head = kids.shift();
+      if (!head) return;
+      head.classList.add("pnl-head");
+
+      const body = document.createElement("div");
+      body.className = "panel-body";
+      const inner = document.createElement("div");
+      kids.forEach((el) => inner.appendChild(el));
+      body.appendChild(inner);
+      panel.appendChild(body);
+
+      // 꺾쇠는 CSS 로 그린 도형이라 내용이 없다 (styles 의 .pnl-caret 참고).
+      const caret = document.createElement("span");
+      caret.className = "pnl-caret";
+      caret.setAttribute("aria-hidden", "true");
+      (head.querySelector("h4") || head).prepend(caret);
+
+      if (open.includes(panel.dataset.panel)) panel.classList.add("open");
+      head.setAttribute("role", "button");
+      head.setAttribute("tabindex", "0");
+      head.setAttribute("aria-expanded", panel.classList.contains("open"));
+
+      const toggle = () => {
+        panel.classList.toggle("open");
+        head.setAttribute("aria-expanded", panel.classList.contains("open"));
+        const keys = [...document.querySelectorAll(".panel.collapsible.open")]
+          .map((p) => p.dataset.panel);
+        try {
+          localStorage.setItem(COLLAPSE_KEY, JSON.stringify(keys));
+        } catch (e) { /* 사파리 프라이빗 모드 등 — 저장만 못 할 뿐 여닫기는 된다 */ }
+      };
+
+      head.addEventListener("click", (e) => {
+        // 헤더에 기간 탭(코스피/코스닥, 1일/1주…)이나 뉴스 검색창이 얹혀
+        // 있는 패널이 있다. 그걸 누른 건 접으라는 뜻이 아니다.
+        if (e.target.closest("input,button,a,label,.seg")) return;
+        toggle();
+      });
+      head.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+      });
+    });
+  }
+
+  initCollapsibles();
   connect();
 })();

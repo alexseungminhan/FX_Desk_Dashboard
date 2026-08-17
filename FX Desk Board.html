@@ -49,9 +49,9 @@
   .panel{padding:16px 18px;background:var(--color-bg)}
   /* 표 머리 — 여덟 종류의 표가 저마다 되풀이하던 선언을 하나로 모은다.
      수급·커브 표는 칸을 오른쪽 정렬해야 해서 글자 스타일을 span 에 건다. */
-  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.fb-head,.flow-head,.cv-head{
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,.flow-head,.cv-head{
     border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px}
-  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.fb-head,
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,
   .flow-head span,.cv-head span{font-size:10.5px;color:var(--c-label);letter-spacing:.06em}
   .flow-head span,.cv-head span{text-align:right}
   .flow-head span:first-child,.cv-head span:first-child{text-align:left}
@@ -85,6 +85,8 @@
   #curve-table{min-width:900px}
   #curve-chart{min-width:860px}
   #strate-table{min-width:780px}
+  /* 넓은 화면에서는 패널을 꽉 채우고, 좁아지면 이 하한부터 가로로 민다 */
+  #drain-table{min-width:680px}
   #fxbond-list{min-width:840px}
   /* 탭이 좁은 패널에서 글자 단위로 접히지 않게 — 줄바꿈 대신 한 줄 유지 */
   .seg-nowrap .seg-opt span{white-space:nowrap}
@@ -146,6 +148,32 @@
   /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
   .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
   .st-num{text-align:right}
+  /* 외환보유액 단기 유출예정액(IMF 표 II): 구분 | 잔존만기 4구간.
+     IMF 템플릿 라벨은 "1. 외화 대출·증권·예치금" 처럼 길어 첫 열을 넉넉히 잡는다.
+     칸 사이 gap 을 쓰지 않고 셀 안쪽 padding 으로 벌린다 — 아래에서 라벨
+     칸을 sticky 로 세우는데, gap 이 있으면 그 틈으로 숫자가 비쳐 지나간다. */
+  .rd-row{display:grid;grid-template-columns:262px repeat(4,1fr);align-items:center;
+          border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .rd-row > span{padding:5px 8px}
+  .rd-num{text-align:right}
+  /* 좁은 화면에서는 표가 가로로 밀리는데, 이 표는 라벨이 "2. 선물환·통화선물
+     순포지션…" 처럼 길어서 값만 남으면 어느 행인지 알 수가 없다. 라벨 칸만
+     왼쪽에 세워 둔다 — 값 네 칸이 그 아래로 지나간다. 바탕이 비치면 안 되니
+     행별 배경색을 라벨 칸에도 똑같이 깔아 준다.
+     한글은 기본값이 아무 데서나 끊기므로 띄어쓰기에서만 접히게 한다. */
+  .rd-name{position:sticky;left:0;z-index:1;padding-left:0 !important;
+           background:var(--color-bg);word-break:keep-all;line-height:1.4}
+  .rd-top .rd-name{font-weight:600}
+  .rd-sub .rd-name{text-indent:11px;font-weight:400;color:var(--c-sub)}
+  .rd-sub{border-bottom-color:rgba(29,31,32,.03)}
+  /* 2-(b) 당국 선물환 매수 잔액 — 이 표에서 데스크가 실제로 보는 한 줄.
+     보드의 나머지 강조는 죄다 파랑 계열(accent)이라 형광펜처럼 노랑으로 뺀다.
+     띠와 배경은 sticky 인 라벨 칸에 걸어야 가로로 밀어도 같이 따라온다
+     (행에 걸면 행의 왼쪽 끝과 함께 화면 밖으로 나가 버린다). sticky 칸은
+     밑을 비추면 안 되므로 불투명색으로, 같은 눈에 보이는 값을 적어 둔다. */
+  .rd-hi{background:rgba(245,205,50,.45);border-bottom-color:rgba(201,154,30,.45)}
+  .rd-hi .rd-name{font-weight:600;color:var(--color-text);
+                  background:#f3e19c;box-shadow:inset 3px 0 0 #c99a1e}
   /* 외화표시채 발행.
      행마다 grid 가 따로라, 폭이 내용에 따라 정해지는 칸(auto)이 하나라도
      있으면 남는 폭이 행마다 달라져 fr 칸들이 제각각 어긋난다 — 발행액도
@@ -166,6 +194,39 @@
   .kw-chip button:hover{color:#c0392b}
   .up{color:var(--color-accent)}
   .dn{color:#c0392b}
+
+  /* — 접히는 패널 —
+     주식 수급 아래로는 늘 띄워 놓고 보는 시세가 아니라 필요할 때 펴 보는
+     자료다. 전부 펴 두면 페이지가 9,500px 이 넘어서 위쪽 환율을 다시 보려면
+     한참 거슬러 올라와야 했다. 기본은 접힘이고, 편 패널은 localStorage 에
+     남아 다음 접속에도 그대로다 (app.js 의 initCollapsibles). */
+  .pnl-head{cursor:pointer;user-select:none}
+  /* 헤더 안에 기간 탭·검색창이 들어앉은 패널이 있다 — 거기까지 손가락
+     커서가 되면 접기 버튼처럼 보인다 (클릭 자체는 JS 에서 걸러 낸다). */
+  .pnl-head .seg,.pnl-head input{cursor:auto}
+  .pnl-head .seg-opt{cursor:pointer}
+  /* 제목 앞 꺾쇠 — 접히면 오른쪽, 펴지면 아래를 가리킨다.
+     글자(▾)가 아니라 정사각형의 두 변을 45° 돌려 그린다. 글리프로 하면
+     폰트마다 베이스라인 위치가 달라 제목 옆에서 아래로 처지는데, 도형은
+     vertical-align:middle 이 글자 한가운데에 정확히 맞춰 준다. */
+  .pnl-caret{display:inline-block;width:10px;height:10px;margin-right:9px;
+             border-right:2.5px solid var(--c-dim);border-bottom:2.5px solid var(--c-dim);
+             vertical-align:middle;transform:translateY(-2px) rotate(-45deg);
+             transition:transform .2s ease,border-color .15s ease}
+  .panel.open .pnl-caret{transform:translateY(-3px) rotate(45deg)}
+  .pnl-head:hover .pnl-caret{border-color:var(--color-accent)}
+  /* 접혀 있을 때 기간·종류 탭은 눌러 봐야 보이는 게 없으니 감춘다.
+     기준일 표시는 남긴다 — 펴지 않고도 언제 것인지는 보여야 한다. */
+  .collapsible:not(.open) .pnl-head .seg{display:none}
+  /* 0fr → 1fr 로 늘리면 내용 높이를 미리 몰라도 애니메이션이 된다
+     (height:auto 는 transition 이 안 걸린다). 안쪽 겹의 overflow:hidden 이
+     접히는 동안 내용을 잘라 준다 — 이게 없으면 삐져나온 채로 줄어든다. */
+  .panel-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease}
+  .panel.open > .panel-body{grid-template-rows:1fr}
+  .panel-body > div{overflow:hidden;min-height:0}
+  /* 접혔을 때 제목 아래 여백이 남으면 빈 줄이 하나 붙은 것처럼 보인다.
+     헤더 여백이 인라인 스타일이라 !important 로 눌러야 먹는다. */
+  .collapsible:not(.open) > .pnl-head{margin-bottom:0 !important}
 
   /* — 모바일 대응: 인라인 그리드를 좁은 화면에서 1단으로 접는다 — */
   @media (max-width: 900px){
@@ -321,7 +382,7 @@
     </div>
 
     <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="flow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
@@ -347,7 +408,7 @@
     </div>
 
     <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="bflow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
@@ -367,7 +428,7 @@
           <div id="bflow-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="swap">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
@@ -386,7 +447,7 @@
           <div id="swap-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="curve">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
@@ -404,7 +465,7 @@
           <div id="curve-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="strate">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
@@ -414,7 +475,16 @@
           <div id="strate-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="drain">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
+            <span id="drain-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
+          </div>
+          <div class="scroll-x"><div id="drain-table"></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="fxbond">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
@@ -424,14 +494,14 @@
           <div id="fxbond-empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="basis">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <h4 style="margin:0 0 10px">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
           <div id="basis-body"></div>
           <div id="basis-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px;line-height:1.5;white-space:pre-line"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="custody">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
             <h4 style="margin:0">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
@@ -442,7 +512,7 @@
           <div id="custody-empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="kwnews">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0;white-space:nowrap">키워드 뉴스 <span class="kop" style="font-size:11px">Keyword News · 네이버 뉴스 검색 · 관련도순</span></h4>
@@ -458,7 +528,7 @@
           <div id="kwnews-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
         </div>
 
-        <div class="blueprint panel">
+        <div class="blueprint panel collapsible" data-panel="news">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
@@ -622,6 +692,6 @@
   </div>
 </div>
 
-<script src="/static/app.js?v=14"></script>
+<script src="/static/app.js?v=18"></script>
 </body>
 </html>

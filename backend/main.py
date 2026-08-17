@@ -48,6 +48,10 @@ KEYWORD_NEWS_START_DELAY_SECONDS = 25
 BASIS_POLL_SECONDS = 60
 # SEIBro·KOFIA 는 일별 확정치라 자주 부를 이유가 없다.
 DAILY_SOURCES_POLL_SECONDS = 1800
+# 외환보유액 IMF 공표(표 II)는 월 1회 갱신이다 — 매월 말 기준치가 다음 달
+# 중순에 올라온다. 실시간으로 볼 물건이 아니라 주 1회만 확인한다. 새 달
+# 수치가 늦어도 일주일 안에는 잡히고, 페이지 한 장이 130KB 라 부담도 없다.
+RESERVE_DRAINS_POLL_SECONDS = 7 * 24 * 3600
 
 # 국내 순위·수급 폴은 이 창(한국시간) 안에서만 돈다. 장 밖에서 매분 긁어 봐야
 # 같은 표를 다시 받을 뿐인데, 그게 대역폭의 대부분이었다 (24시간 x 3.7MB/분).
@@ -287,6 +291,20 @@ async def _daily_sources_loop() -> None:
         await asyncio.sleep(DAILY_SOURCES_POLL_SECONDS)
 
 
+async def _reserve_drains_loop() -> None:
+    """외환보유액 IMF 공표 표 II — 월 1회 갱신이라 주 1회만 본다.
+
+    프로세스가 일주일 넘게 살아 있어야 두 번째 수집이 돈다. 재기동이 잦으면
+    사실상 기동 시 시드 한 번이 전부인데, 월 1회 갱신이라 그래도 맞는다."""
+    while True:
+        await asyncio.sleep(RESERVE_DRAINS_POLL_SECONDS)
+        try:
+            await asyncio.to_thread(market.poll_reserve_drains)
+            await manager.broadcast()
+        except Exception:
+            log.exception("reserve drains loop iteration failed")
+
+
 @app.on_event("startup")
 async def startup() -> None:
     # Seed everything before serving so the very first page load already
@@ -307,6 +325,7 @@ async def startup() -> None:
         asyncio.to_thread(market.poll_bond_flow),
         asyncio.to_thread(market.poll_bond_quotes),
         asyncio.to_thread(market.poll_short_term_rates),
+        asyncio.to_thread(market.poll_reserve_drains),
     )
     # 베이시스 이론가는 CD(91일)를 조달금리로 쓰므로 kr_rates 다음에 받는다.
     # 첫 스냅샷부터 대체값이 아닌 실제 고시금리가 들어가게 하려는 것.
@@ -325,6 +344,7 @@ async def startup() -> None:
     asyncio.create_task(_investor_flow_loop())
     asyncio.create_task(_basis_loop())
     asyncio.create_task(_daily_sources_loop())
+    asyncio.create_task(_reserve_drains_loop())
     # 키워드 뉴스는 검색 스로틀 때문에 한 바퀴가 20초쯤 걸린다. 첫 화면을
     # 그만큼 늦출 이유가 없어 시드 없이 루프에만 맡긴다 (루프가 즉시 1회 돈다).
     asyncio.create_task(_keyword_news_loop())
