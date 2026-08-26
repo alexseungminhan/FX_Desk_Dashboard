@@ -282,10 +282,16 @@
   <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:16px 26px;position:sticky;top:0;z-index:30;background:#f2f2f3">
     <span class="nav-brand" style="font-size:20px;margin-right:0">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:12px;font-weight:400;color:var(--c-dim);letter-spacing:.14em;text-transform:uppercase">Market Board</span></span>
     <div id="gsearch-wrap" style="position:relative;flex:1;max-width:360px;margin-right:auto">
-      <input id="global-search" class="input" type="text" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
+      <input id="global-search" class="input" type="text" data-i18n-ph="nav.search.ph" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
       <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
     </div>
-    <span id="conn-badge" class="conn-badge"><span id="conn-dot" class="conn-dot connecting"></span><span id="conn-text">연결 중…</span></span>
+    <!-- 한/영 — 보드 전체 문구를 갈아 끼운다 (app.js 의 applyLang).
+         고른 언어는 localStorage 에 남아 다음 접속에도 그대로다. -->
+    <div class="seg" id="lang-seg" style="height:26px">
+      <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang" id="lang-ko" checked><span>한</span></label>
+      <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang" id="lang-en"><span>EN</span></label>
+    </div>
+    <span id="conn-badge" class="conn-badge"><span id="conn-dot" class="conn-dot connecting"></span><span id="conn-text" data-i18n="conn.connecting">연결 중…</span></span>
     <span class="mono" id="clock" style="font-size:13px;font-weight:500"></span>
     <span class="mono" id="today" style="font-size:12px;color:var(--c-dim)"></span>
   </div>
@@ -299,16 +305,16 @@
     <div class="blueprint panel">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
-        <h4 style="margin:0">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
-        <span style="font-size:11px" class="text-muted">지역별 · 실시간 (Yahoo Finance)</span>
+        <h4 style="margin:0" data-i18n="fx.title">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
+        <span style="font-size:11px" class="text-muted" data-i18n="fx.sub">지역별 · 실시간 (Yahoo Finance)</span>
       </div>
       <div id="fx-regions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 26px">
         <div id="fx-col-0"></div>
         <div id="fx-col-1"></div>
         <div id="fx-col-2"></div>
       </div>
-      <div style="margin-top:14px;border-top:1px solid var(--color-divider);padding-top:10px">
-        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:4px">환율 주요 뉴스 <span style="color:var(--c-label);letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
+      <div id="fx-news-block" data-ko-only style="margin-top:14px;border-top:1px solid var(--color-divider);padding-top:10px">
+        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:4px" data-i18n="fxnews.label">환율 주요 뉴스 <span style="color:var(--c-label);letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
         <div id="fx-news-list" class="nws-list"></div>
         <div id="fx-news-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
       </div>
@@ -320,7 +326,7 @@
     <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="idx.title">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
           <div id="idx-main" style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px">
             <div id="idx-col-0"></div>
             <div id="idx-col-1"></div>
@@ -328,7 +334,7 @@
         </div>
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="usrates.title">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
           <div id="rates-list"></div>
         </div>
     </div>
@@ -336,12 +342,12 @@
     <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="krrates.title">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
           <div id="kr-rates-list"></div>
         </div>
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="comm.title">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
           <div id="commodities-list"></div>
         </div>
     </div>
@@ -350,10 +356,10 @@
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+            <h4 style="margin:0" data-i18n="krmv.title">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
             <div class="seg" style="height:28px">
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span>상승</span></label>
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-losers"><span>하락</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span data-i18n="seg.up">상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-losers"><span data-i18n="seg.down">하락</span></label>
             </div>
           </div>
           <div class="scroll-x"><div id="movers-list" class="mv-list">
@@ -371,7 +377,7 @@
         </div>
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="krmt.title">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
           <div class="scroll-x"><div id="kr-most-traded-list" class="mv-list"></div></div>
         </div>
     </div>
@@ -380,17 +386,17 @@
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
+            <h4 style="margin:0" data-i18n="usmv.title">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
             <div class="seg" style="height:28px">
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span>상승</span></label>
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-losers"><span>하락</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span data-i18n="seg.up">상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-losers"><span data-i18n="seg.down">하락</span></label>
             </div>
           </div>
           <div class="scroll-x"><div id="us-movers-list" class="mv-list"></div></div>
         </div>
         <div class="blueprint panel">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="usma.title">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
           <div class="scroll-x"><div id="us-most-active-list" class="mv-list"></div></div>
         </div>
     </div>
@@ -399,21 +405,21 @@
         <div class="blueprint panel collapsible" data-panel="flow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
+            <h4 style="margin:0" data-i18n="flow.title">주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
             <div class="seg" style="height:28px">
-              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kospi" checked><span>코스피</span></label>
-              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kosdaq"><span>코스닥</span></label>
-              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-futures"><span>선물</span></label>
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kospi" checked><span data-i18n="flow.kospi">코스피</span></label>
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kosdaq"><span data-i18n="flow.kosdaq">코스닥</span></label>
+              <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-futures"><span data-i18n="flow.futures">선물</span></label>
             </div>
           </div>
           <div class="scroll-x"><div id="flow-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
-            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:var(--c-label);font-weight:400" id="flow-chart-period"></span></h5>
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="flow.netbuy">주체별 순매수</span> <span style="color:var(--c-label);font-weight:400" id="flow-chart-period"></span></h5>
             <div class="seg" style="height:26px">
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1d" checked><span>1일</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1w"><span>1주</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1m"><span>1개월</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-3m"><span>3개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1d" checked><span data-i18n="per.1d">1일</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1w"><span data-i18n="per.1w">1주</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-1m"><span data-i18n="per.1m">1개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="flowp" id="flowp-3m"><span data-i18n="per.3m">3개월</span></label>
             </div>
           </div>
           <div class="scroll-x"><div id="flow-chart"></div></div>
@@ -425,17 +431,17 @@
         <div class="blueprint panel collapsible" data-panel="bflow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
+            <h4 style="margin:0" data-i18n="bflow.title">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
             <div class="seg seg-nowrap" id="bflow-seg" style="height:28px"></div>
           </div>
           <div class="scroll-x"><div id="bflow-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
-            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">주체별 순매수 <span style="color:var(--c-label);font-weight:400" id="bflow-chart-label"></span></h5>
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="flow.netbuy">주체별 순매수</span> <span style="color:var(--c-label);font-weight:400" id="bflow-chart-label"></span></h5>
             <div class="seg" style="height:26px">
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1d" checked><span>1일</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1w"><span>1주</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1m"><span>1개월</span></label>
-              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-3m"><span>3개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1d" checked><span data-i18n="per.1d">1일</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1w"><span data-i18n="per.1w">1주</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-1m"><span data-i18n="per.1m">1개월</span></label>
+              <label class="seg-opt" style="padding:3px 11px;font-size:11.5px"><input type="radio" name="bflowp" id="bflowp-3m"><span data-i18n="per.3m">3개월</span></label>
             </div>
           </div>
           <div class="scroll-x"><div id="bflow-chart"></div></div>
@@ -445,33 +451,33 @@
         <div class="blueprint panel collapsible" data-panel="swap">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
+            <h4 style="margin:0" data-i18n="swap.title">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
             <span id="swap-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
-          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">FX 스왑포인트 <span style="color:var(--c-label);font-weight:400" id="swap-spot"></span></h5>
+          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="swap.pt">FX 스왑포인트</span> <span style="color:var(--c-label);font-weight:400" id="swap-spot"></span></h5>
           <div class="scroll-x"><div id="swap-table"></div></div>
-          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">FX-implied 원화금리 · CCS 베이시스 <span style="color:var(--c-label);font-weight:400" id="fximplied-src"></span></h5>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="swap.fximplied">FX-implied 원화금리 · CCS 베이시스</span> <span style="color:var(--c-label);font-weight:400" id="fximplied-src"></span></h5>
           <div class="scroll-x"><div id="fximplied-table"></div></div>
           <div id="fximplied-variants" class="mono fi-variants"></div>
           <div id="fximplied-warn" class="fi-warn"></div>
-          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">IRS · CRS <span style="color:var(--c-label);font-weight:400" id="irscrs-src">· 통화베이시스 = CRS − IRS</span></h5>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="swap.irscrs">IRS · CRS</span> <span style="color:var(--c-label);font-weight:400" id="irscrs-src" data-i18n="swap.irscrs.note">· 통화베이시스 = CRS − IRS</span></h5>
           <div class="scroll-x"><div id="irscrs-table"></div></div>
-          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">국고채 − IRS <span style="color:var(--c-label);font-weight:400">· 스프레드 = 국고채 현물 − IRS</span></h5>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="swap.bondirs">국고채 − IRS</span> <span style="color:var(--c-label);font-weight:400" data-i18n="swap.bondirs.note">· 스프레드 = 국고채 현물 − IRS</span></h5>
           <div class="scroll-x"><div id="bondirs-table"></div></div>
         </div>
 
         <div class="blueprint panel collapsible" data-panel="curve">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
+            <h4 style="margin:0" data-i18n="curve.title">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
             <span id="curve-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
-          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">지표종목 최종호가 <span style="color:var(--c-label);font-weight:400" id="quotes-asof"></span></h5>
+          <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="curve.quotes">지표종목 최종호가</span> <span style="color:var(--c-label);font-weight:400" id="quotes-asof"></span></h5>
           <div class="scroll-x"><div id="quotes-list"></div></div>
-          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em">종류별 만기수익률</h5>
+          <h5 style="margin:16px 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em" data-i18n="curve.bytype">종류별 만기수익률</h5>
           <div class="scroll-x"><div id="curve-table"></div></div>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px">
-            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em">만기별 곡선 <span style="color:var(--c-label);font-weight:400" id="curve-chart-label"></span></h5>
+            <h5 style="margin:0;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="curve.bytenor">만기별 곡선</span> <span style="color:var(--c-label);font-weight:400" id="curve-chart-label"></span></h5>
             <div class="seg seg-nowrap" id="curve-seg" style="height:26px"></div>
           </div>
           <div class="scroll-x"><div id="curve-chart"></div></div>
@@ -481,7 +487,7 @@
         <div class="blueprint panel collapsible" data-panel="strate">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
+            <h4 style="margin:0" data-i18n="strate.title">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
             <span id="strate-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="strate-table"></div></div>
@@ -491,7 +497,7 @@
         <div class="blueprint panel collapsible" data-panel="drain">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
+            <h4 style="margin:0" data-i18n="drain.title">외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
             <span id="drain-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="drain-table"></div></div>
@@ -500,16 +506,16 @@
         <div class="blueprint panel collapsible" data-panel="fxbond">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
+            <h4 style="margin:0" data-i18n="fxbond.title">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
             <span id="fxbond-count" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="fxbond-list"></div></div>
-          <div id="fxbond-empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
+          <div id="fxbond-empty" data-i18n="fxbond.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
         </div>
 
         <div class="blueprint panel collapsible" data-panel="basis">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
+          <h4 style="margin:0 0 10px" data-i18n="basis.title">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
           <div id="basis-body"></div>
           <div id="basis-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px;line-height:1.5;white-space:pre-line"></div>
         </div>
@@ -517,15 +523,15 @@
         <div class="blueprint panel collapsible" data-panel="custody">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px">
-            <h4 style="margin:0">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
+            <h4 style="margin:0" data-i18n="custody.title">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
             <span id="custody-source" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div id="custody-stats" style="display:flex;flex-wrap:wrap;gap:0 34px;margin-bottom:12px"></div>
           <div class="scroll-x"><div id="custody-chart"></div></div>
-          <div id="custody-empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
+          <div id="custody-empty" data-i18n="custody.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="kwnews">
+        <div class="blueprint panel collapsible" data-panel="kwnews" data-ko-only>
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0;white-space:nowrap">키워드 뉴스 <span class="kop" style="font-size:11px">Keyword News · 네이버 뉴스 검색 · 관련도순</span></h4>
@@ -544,22 +550,22 @@
         <div class="blueprint panel collapsible" data-panel="news">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px">
-            <h4 style="margin:0">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
+            <h4 style="margin:0" data-i18n="news.title">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
             <span id="news-count" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div style="position:relative;margin-bottom:8px">
-            <input id="news-kw-input" class="input" type="text" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
+            <input id="news-kw-input" class="input" type="text" data-i18n-ph="news.kw.ph" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
           </div>
           <div id="news-kw-chips" class="kw-wrap" style="display:none"></div>
           <div id="news-list" class="nws-list"></div>
-          <div id="news-empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">일치하는 키워드의 뉴스가 없습니다.</div>
+          <div id="news-empty" data-i18n="news.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">일치하는 키워드의 뉴스가 없습니다.</div>
           <div id="news-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
         </div>
 
     </div>
 
     <div style="text-align:center;font-size:10.5px;color:var(--c-label);padding-top:6px;letter-spacing:.04em">
-      FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신 <span id="as-of" class="mono">—</span>
+      <span data-i18n="footer">FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신</span> <span id="as-of" class="mono">—</span>
     </div>
   </div>
 </div>
@@ -582,13 +588,13 @@
           <span id="stk-asof" class="pop-asof"></span>
         </div>
       </div>
-      <button type="button" id="stk-close" class="pop-x" aria-label="닫기">✕</button>
+      <button type="button" id="stk-close" class="pop-x" data-i18n-aria="pop.close" aria-label="닫기">✕</button>
     </div>
 
     <div class="pop-chart-box blueprint">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       <div class="pop-chart-head">
-        <span id="stk-chart-label" class="pop-chart-label">당일 분봉 · Intraday</span>
+        <span id="stk-chart-label" class="pop-chart-label" data-i18n="pop.intraday">당일 분봉 · Intraday</span>
         <span class="pop-range" id="stk-range">
           <button type="button" data-range="1D" aria-pressed="true">1D</button>
           <button type="button" data-range="1W" aria-pressed="false">1W</button>
@@ -613,29 +619,29 @@
     </div>
 
     <div class="pop-stats">
-      <div class="stat"><span>거래량 (주)</span><b id="stk-volume"></b></div>
-      <div class="stat"><span>거래대금</span><b id="stk-tradingValue"></b></div>
-      <div class="stat"><span>시가총액</span><b id="stk-marketCap"></b></div>
-      <div class="stat"><span>시가</span><b id="stk-open"></b></div>
-      <div class="stat"><span>고가</span><b id="stk-high"></b></div>
-      <div class="stat"><span>저가</span><b id="stk-low"></b></div>
-      <div class="stat"><span>52주 최고</span><b id="stk-week52High"></b></div>
-      <div class="stat"><span>52주 최저</span><b id="stk-week52Low"></b></div>
-      <div class="stat"><span>외국인 소진율</span><b id="stk-foreignRate"></b></div>
+      <div class="stat"><span data-i18n="stat.volume">거래량 (주)</span><b id="stk-volume"></b></div>
+      <div class="stat"><span data-i18n="stat.tradingValue">거래대금</span><b id="stk-tradingValue"></b></div>
+      <div class="stat"><span data-i18n="stat.marketCap">시가총액</span><b id="stk-marketCap"></b></div>
+      <div class="stat"><span data-i18n="stat.open">시가</span><b id="stk-open"></b></div>
+      <div class="stat"><span data-i18n="stat.high">고가</span><b id="stk-high"></b></div>
+      <div class="stat"><span data-i18n="stat.low">저가</span><b id="stk-low"></b></div>
+      <div class="stat"><span data-i18n="stat.w52h">52주 최고</span><b id="stk-week52High"></b></div>
+      <div class="stat"><span data-i18n="stat.w52l">52주 최저</span><b id="stk-week52Low"></b></div>
+      <div class="stat"><span data-i18n="stat.foreignRate">외국인 소진율</span><b id="stk-foreignRate"></b></div>
       <div class="stat"><span>PER</span><b id="stk-per"></b></div>
       <div class="stat"><span>PBR</span><b id="stk-pbr"></b></div>
-      <div class="stat"><span>전일 종가</span><b id="stk-prevClose"></b></div>
+      <div class="stat"><span data-i18n="stat.prevClose">전일 종가</span><b id="stk-prevClose"></b></div>
     </div>
 
     <div class="pop-news">
-      <div class="pop-sec-label">관련 뉴스 Headlines</div>
+      <div class="pop-sec-label" data-i18n="pop.relnews">관련 뉴스 Headlines</div>
       <div id="stk-news"></div>
     </div>
 
     <div class="pop-foot">
       <span id="stk-source" class="pop-source"></span>
       <span class="pop-actions">
-        <button type="button" id="stk-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+        <button type="button" id="stk-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><span data-i18n="pop.close">닫기</span></button>
       </span>
     </div>
   </div>
@@ -659,7 +665,7 @@
           <span id="ind-asof" class="pop-asof"></span>
         </div>
       </div>
-      <button type="button" id="ind-close" class="pop-x" aria-label="닫기">✕</button>
+      <button type="button" id="ind-close" class="pop-x" data-i18n-aria="pop.close" aria-label="닫기">✕</button>
     </div>
 
     <div class="pop-chart-box blueprint">
@@ -692,19 +698,20 @@
     <div id="ind-stats" class="pop-stats"></div>
 
     <div id="ind-news-wrap" class="pop-news">
-      <div class="pop-sec-label">관련 뉴스 Headlines</div>
+      <div class="pop-sec-label" data-i18n="pop.relnews">관련 뉴스 Headlines</div>
       <div id="ind-news"></div>
     </div>
 
     <div class="pop-foot">
       <span id="ind-source" class="pop-source"></span>
       <span class="pop-actions">
-        <button type="button" id="ind-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>닫기</button>
+        <button type="button" id="ind-close-btn" class="btn btn-secondary blueprint"><i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i><span data-i18n="pop.close">닫기</span></button>
       </span>
     </div>
   </div>
 </div>
 
-<script src="/static/app.js?v=19"></script>
+<script src="/static/i18n.js?v=4"></script>
+<script src="/static/app.js?v=23"></script>
 </body>
 </html>

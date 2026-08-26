@@ -255,8 +255,9 @@ def _fmt_signed_flow(v: float, unit: str) -> str:
     if abs(v) >= 10_000:
         return f"{v / 10_000:+,.2f}조"
     # 억 미만은 반올림하면 0이 되는데, 거기에 부호를 붙이면 "-0억"처럼
-    # 방향이 있는 것처럼 보인다. 0은 부호 없이 0으로 둔다.
-    return f"{v:+,.0f}억" if round(v) else "0억"
+    # 방향이 있는 것처럼 보인다. 0은 부호도 단위도 없이 0으로 둔다 —
+    # "0억"은 억 단위로 잰 값처럼 보이지만 실은 순매수가 없다는 뜻이다.
+    return f"{v:+,.0f}억" if round(v) else "0"
 
 
 def _usable_price(v) -> float | None:
@@ -517,11 +518,15 @@ class MarketData:
         except Exception:
             log.exception("yahoo news poll failed")
 
+        # origin 은 화면이 언어별로 갈라 보여 주려고 쓴다 — 영문판은 네이버
+        # 한국어 헤드라인을 빼고 Yahoo 것만 싣는다 (app.js 의 filteredNews).
         merged = [
-            {"title": n["title"], "url": n["url"], "time": n["time"], "source": n["press"], "summary": n["summary"]}
+            {"title": n["title"], "url": n["url"], "time": n["time"],
+             "source": n["press"], "summary": n["summary"], "origin": "naver"}
             for n in naver_items
         ] + [
-            {"title": n["title"], "url": n["url"], "time": n["time"], "source": n["source"], "summary": n["summary"]}
+            {"title": n["title"], "url": n["url"], "time": n["time"],
+             "source": n["source"], "summary": n["summary"], "origin": "yahoo"}
             for n in yahoo_items
         ]
         if not merged:
@@ -933,6 +938,7 @@ class MarketData:
                 "tag": n["source"],
                 "url": n["url"],
                 "summary": n["summary"],
+                "origin": n.get("origin", ""),
             }
             for n in self.news
         ]
@@ -981,7 +987,9 @@ class MarketData:
                 ]
             return {
                 "label": data["label"],
-                "unitLabel": "계약" if unit == "contract" else "억원",
+                # 값에 억·조가 이미 붙으므로 단위는 "원"이다 — "억원"이라고
+                # 적으면 "-2.25조" 막대 옆에서 단위가 두 개로 읽힌다.
+                "unitLabel": "계약" if unit == "contract" else "원",
                 "asOf": data["asOf"],
                 "days": data["days"],
                 "periods": periods,
@@ -1303,7 +1311,7 @@ class MarketData:
         def fmt_eok(v: int) -> str:
             if abs(v) >= 10_000:
                 return f"{v / 10_000:+,.2f}조"
-            return f"{v:+,}억" if v else "0억"
+            return f"{v:+,}억" if v else "0"
 
         bond_flow_rows = None
         if self.bond_flow:

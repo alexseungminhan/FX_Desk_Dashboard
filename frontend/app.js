@@ -31,6 +31,126 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // -- 한/영 -------------------------------------------------------------
+  // 사전은 i18n.js 에 있다. 여기서는 세 가지 통로만 둔다:
+  //   t(key)   HTML·app.js 에 박힌 고정 문구
+  //   tr(s)    서버가 실어 보낸 라벨 (못 찾으면 원문 그대로)
+  //   amt(s)   억·조가 붙은 금액 (영문에서는 자릿수를 다시 접는다)
+  // 언어를 바꾸면 스냅샷을 다시 받는 게 아니라 들고 있던 걸로 다시 그린다.
+  const I18N = window.FXI18N;
+  const LANG_KEY = "fxdesk.lang";
+  let lang = "ko";
+  try {
+    if (localStorage.getItem(LANG_KEY) === "en") lang = "en";
+  } catch (e) { /* 사파리 프라이빗 모드 — 기본(한국어)으로 간다 */ }
+
+  const isEn = () => lang === "en";
+
+  function t(key) {
+    const e = I18N.STR[key];
+    if (!e) return key;
+    return e[lang] ?? e.ko;
+  }
+
+  function tr(s) {
+    if (!isEn()) return String(s ?? "");
+    const raw = String(s ?? "");
+    const hit = I18N.DYN[raw];
+    if (hit !== undefined) return hit;
+    // 통째로는 못 찾는 문구 — 한글이 섞여 있을 때만 조각을 갈아 끼운다.
+    if (!/[가-힯]/.test(raw)) return raw;
+    let out = raw;
+    for (const [re, to] of I18N.RULES) out = out.replace(re, to);
+    return out;
+  }
+
+  function amt(s) {
+    return isEn() ? I18N.trAmount(s) : String(s ?? "");
+  }
+
+  // 서버가 준 금액 문자열 대신 원값에서 직접 만든다 — 수급 표·차트처럼
+  // raw 를 같이 받는 자리에서는 반올림을 두 번 하지 않는 이쪽이 정확하다.
+  function fmtFlowValue(raw, unitLabel) {
+    if (!isEn()) return null;                       // 한국어는 서버 문자열 그대로
+    if (unitLabel === "계약") return `${raw > 0 ? "+" : raw < 0 ? "−" : ""}${Math.abs(Math.round(raw)).toLocaleString("en-US")}`;
+    return I18N.fmtWon(raw * 1e8, true);            // 억원 단위로 온다
+  }
+
+  // "총 128건" / "128 headlines". 한국어는 수 앞에 단위가 붙고 영어는 뒤에
+  // 붙어서 문장 순서 자체가 달라진다 — 조각을 이어 붙이지 않고 통째로 만든다.
+  function fmtCount(n, total) {
+    if (isEn()) return total ? `${n} headlines` : `${n} issues`;
+    return total ? `총 ${n}건` : `${n}건`;
+  }
+
+  // -- 언어 전환 ---------------------------------------------------------
+  // 스냅샷을 다시 받지 않고 들고 있는 걸로 전부 다시 그린다. 다시 그리기를
+  // 건너뛰는 캐시(setHtml 의 __html, 차트 서명, 탭 목록)가 여럿 있어서
+  // 그것부터 비워야 한다 — 안 그러면 언어만 그대로 남는 패널이 생긴다.
+  let connState = "connecting";
+
+  // 접히는 패널 제목 앞의 꺾쇠. CSS 로 그린 도형이라 내용이 없다
+  // (styles 의 .pnl-caret). 제목 자체가 data-i18n 이라 언어를 바꾸면
+  // innerHTML 과 함께 쓸려 나간다 — 문구를 갈아 끼운 뒤 다시 심는다.
+  function ensureCarets() {
+    document.querySelectorAll(".panel.collapsible > .pnl-head").forEach((head) => {
+      const host = head.querySelector("h4") || head;
+      if (host.querySelector(":scope > .pnl-caret")) return;
+      const caret = document.createElement("span");
+      caret.className = "pnl-caret";
+      caret.setAttribute("aria-hidden", "true");
+      host.prepend(caret);
+    });
+  }
+
+  function applyStaticText() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll("[data-i18n]").forEach((el) => {
+      el.innerHTML = t(el.dataset.i18n);
+    });
+    ensureCarets();
+    document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+      el.placeholder = t(el.dataset.i18nPh);
+    });
+    document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
+      el.setAttribute("aria-label", t(el.dataset.i18nAria));
+    });
+    // 네이버 한국어 뉴스만 담긴 패널은 영문판에 실을 게 없다.
+    document.querySelectorAll("[data-ko-only]").forEach((el) => {
+      el.style.display = isEn() ? "none" : "";
+    });
+  }
+
+  function resetRenderCaches() {
+    document.querySelectorAll("[id]").forEach((el) => { delete el.__html; });
+    flowChartKey = "";
+    bondFlowChartKey = "";
+    const bseg = $("bflow-seg"), cseg = $("curve-seg");
+    if (bseg) delete bseg.dataset.keys;
+    if (cseg) delete cseg.dataset.keys;
+  }
+
+  function applyLang() {
+    applyStaticText();
+    resetRenderCaches();
+    setConn(connState);
+    tickClock();
+    if (latest) render(latest);
+    renderNewsChips();
+    // 아직 한 번도 안 받았으면 그대로 둔다 — 여기서 null 로 그리면 도착
+    // 직전에 "불러오지 못했습니다"가 잠깐 번쩍인다.
+    if (custodyData) renderCustody(custodyData);
+  }
+
+  function setLang(next) {
+    if (next === lang) return;
+    lang = next;
+    try {
+      localStorage.setItem(LANG_KEY, lang);
+    } catch (e) { /* 저장만 못 할 뿐 전환은 된다 */ }
+    applyLang();
+  }
+
   function esc(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -63,7 +183,7 @@
   const ROW_A11Y = ' role="button" tabindex="0"';
 
   function staleTitle(row) {
-    return row.stale ? ' title="마지막 성공한 값 (일시적 갱신 실패)"' : "";
+    return row.stale ? ` title="${esc(t("stale.title"))}"` : "";
   }
 
   // ETF·ETN도 개별종목과 같은 랭킹에 섞여 들어오므로(네이버 증권 ·
@@ -75,18 +195,18 @@
   // -- panel renderers ---------------------------------------------------
 
   function renderTicker(rows) {
-    setHtml($("ticker-strip"), rows.map((t) => `
-      <div class="clickable-row"${ROW_A11Y} data-kind="${esc(t.kind || "index")}" data-symbol="${esc(t.symbol)}" data-name="${esc(t.name || t.label)}"${t.pair ? ` data-pair="${esc(t.pair)}"` : ""}${t.contract ? ` data-contract="${esc(t.contract)}"` : ""}${t.sub ? ` data-sub="${esc(t.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(t)}>
-        <span style="font-size:10px;letter-spacing:.06em;color:var(--c-sub);text-transform:uppercase;white-space:nowrap">${esc(t.label)}</span>
-        <span class="mono${t.stale ? " stale-dot" : ""}" style="font-size:15px;font-weight:500">${esc(t.price)}</span>
-        <span class="mono" style="font-size:11px;color:${t.color}">${t.arrow} ${esc(t.pct)}</span>
+    setHtml($("ticker-strip"), rows.map((r) => `
+      <div class="clickable-row"${ROW_A11Y} data-kind="${esc(r.kind || "index")}" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name || r.label)}"${r.pair ? ` data-pair="${esc(r.pair)}"` : ""}${r.contract ? ` data-contract="${esc(r.contract)}"` : ""}${r.sub ? ` data-sub="${esc(r.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(r)}>
+        <span style="font-size:10px;letter-spacing:.06em;color:var(--c-sub);text-transform:uppercase;white-space:nowrap">${esc(tr(r.label))}</span>
+        <span class="mono${r.stale ? " stale-dot" : ""}" style="font-size:15px;font-weight:500">${esc(r.price)}</span>
+        <span class="mono" style="font-size:11px;color:${r.color}">${r.arrow} ${esc(r.pct)}</span>
       </div>`).join(""));
   }
 
   function fxRowHtml(f, kind) {
     return `
       <div class="fx-row clickable-row"${ROW_A11Y} data-kind="${kind}" data-symbol="${esc(f.symbol)}" data-name="${esc(f.name)}"${f.pair ? ` data-pair="${esc(f.pair)}"` : ""}${f.sub ? ` data-sub="${esc(f.sub)}"` : ""}${staleTitle(f)}>
-        <span class="fx-pair">${esc(f.pair || f.name)}</span>
+        <span class="fx-pair">${esc(tr(f.pair || f.name))}</span>
         <span class="mono fx-px">${esc(f.price)}</span>
         <span class="mono fx-pct" style="color:${f.color}">${f.arrow} ${esc(f.pct)}</span>
       </div>`;
@@ -96,7 +216,7 @@
     regions.forEach((g, i) => {
       const col = $(`fx-col-${i}`);
       if (!col) return;
-      setHtml(col, `<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);padding:4px 0;border-bottom:1px solid var(--color-divider)">${esc(g.label)}</div>`
+      setHtml(col, `<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);padding:4px 0;border-bottom:1px solid var(--color-divider)">${esc(tr(g.label))}</div>`
         + g.rows.map((f) => fxRowHtml(f, "fx")).join(""));
     });
   }
@@ -110,7 +230,7 @@
   function renderRates(rows) {
     setHtml($("rates-list"), rows.map((rt) => `
       <div class="fx-row clickable-row"${ROW_A11Y} data-kind="rate" data-symbol="${esc(rt.symbol)}" data-name="${esc(rt.name)}" data-sub="${esc(rt.sub)}"${staleTitle(rt)}>
-        <span class="fx-pair">${esc(rt.name)}</span>
+        <span class="fx-pair">${esc(tr(rt.name))}</span>
         <span class="mono fx-px">${esc(rt.value)}</span>
         <span class="mono fx-pct" style="color:${rt.color}">${rt.arrow} ${esc(rt.chg)}</span>
       </div>`).join(""));
@@ -119,7 +239,7 @@
   function renderCommodities(rows) {
     setHtml($("commodities-list"), rows.map((r) => `
       <div class="fx-row clickable-row"${ROW_A11Y} data-kind="commodity" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name)}" data-contract="${esc(r.contract)}"${staleTitle(r)}>
-        <span class="fx-pair">${esc(r.name)}</span>
+        <span class="fx-pair">${esc(tr(r.name))}</span>
         <span class="mono fx-px">$${esc(r.price)}</span>
         <span class="mono fx-pct" style="color:${r.color}">${r.arrow} ${esc(r.pct)}</span>
       </div>`).join(""));
@@ -145,7 +265,7 @@
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
         <span class="mono mv-px">${esc(m.price)}</span>
         <span class="mono mv-pct" style="color:${m.color}">${esc(m.pct)}</span>
-        <span class="mono mt-vol">${esc(m.tradingValue)}</span>
+        <span class="mono mt-vol">${esc(amt(m.tradingValue))}</span>
       </div>`).join(""));
   }
 
@@ -177,7 +297,7 @@
     if (!rows) return;
     setHtml($("kr-rates-list"), rows.map((r) => `
       <div class="fx-row clickable-row"${ROW_A11Y} data-kind="krrate" data-symbol="${esc(r.code)}" data-name="${esc(r.name)}"${staleTitle(r)}>
-        <span class="fx-pair">${esc(r.name)}</span>
+        <span class="fx-pair">${esc(tr(r.name))}</span>
         <span class="mono fx-px">${esc(r.value)}</span>
         <span class="mono fx-pct" style="color:${r.color}">${r.arrow} ${esc(r.chg)}</span>
       </div>`).join(""));
@@ -185,7 +305,7 @@
 
   function renderFxNews(rows) {
     if (rows) fxNewsRows = rows;
-    if (!fxNewsRows) return;
+    if (!fxNewsRows || isEn()) return;   // 네이버 한국어 뉴스 — 영문판에는 없다
 
     const totalPages = Math.max(1, Math.ceil(fxNewsRows.length / FX_NEWS_PAGE_SIZE));
     if (fxNewsPage > totalPages) fxNewsPage = totalPages;
@@ -217,14 +337,14 @@
     const foot = $("flow-foot");
 
     if (!data || !periods.length) {
-      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">수급 데이터를 불러오지 못했습니다.</div>`);
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.flow"))}</div>`);
       foot.textContent = "";
       return;
     }
 
     const head = `
       <div class="flow-row flow-head">
-        <span>투자자</span>${periods.map((p) => `<span>${esc(p.label)}</span>`).join("")}
+        <span>${esc(t("h.investor"))}</span>${periods.map((p) => `<span>${esc(tr(p.label))}</span>`).join("")}
       </div>`;
 
     // 기간별 배열은 모두 같은 투자자 순서라 첫 기간을 기준으로 행을 편다.
@@ -232,17 +352,20 @@
       const first = data.periods[periods[0].key][i];
       const cells = periods.map((p) => {
         const cell = data.periods[p.key][i];
-        return `<span class="mono flow-val" style="color:${cell.color}">${esc(cell.value)}</span>`;
+        const v = fmtFlowValue(cell.raw, data.unitLabel) ?? cell.value;
+        return `<span class="mono flow-val" style="color:${cell.color}">${esc(v)}</span>`;
       }).join("");
       return `
         <div class="flow-row${FLOW_SUB_ROWS.has(first.key) ? " flow-sub" : ""}">
-          <span class="flow-name">${esc(first.label)}</span>${cells}
+          <span class="flow-name">${esc(tr(first.label))}</span>${cells}
         </div>`;
     }).join("");
 
     setHtml(table, head + rows);
-    foot.textContent = `${data.asOf} 기준 · 단위 ${data.unitLabel} · 최근 ${data.days}영업일 누적`
-      + (data.stale ? " · 갱신 실패(직전 값)" : "");
+    foot.textContent = (isEn()
+      ? `As of ${data.asOf} · unit ${trUnit(data.unitLabel)} · cumulative over the last ${data.days} business days`
+      : `${data.asOf} 기준 · 단위 ${data.unitLabel} · 최근 ${data.days}영업일 누적`)
+      + (data.stale ? " " + t("foot.stale") : "");
     renderFlowChart(data, periods);
   }
 
@@ -259,9 +382,17 @@
   function flowAxisLabel(v, unitLabel) {
     if (v === 0) return "0";   // 조 눈금 사이에 "0억"이 끼면 단위가 뒤섞여 보인다
     if (unitLabel === "계약") return v.toLocaleString("en-US");
+    if (isEn()) return I18N.fmtWon(v * 1e8, false);
     return Math.abs(v) >= 10000
       ? `${(v / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
       : `${Math.round(v).toLocaleString("en-US")}억`;
+  }
+
+  // 단위 라벨 — 값에 억·조(영문은 bn·tn)가 이미 붙어 있으므로 여기서는
+  // 통화만 말한다. 계약 수인 선물만 다르다.
+  function trUnit(unitLabel) {
+    if (!isEn()) return unitLabel;
+    return unitLabel === "계약" ? t("unit.contract") : t("unit.krw");
   }
 
   // 1 / 2 / 2.5 / 5 × 10^k 중 v 이상인 첫 값 — 눈금이 읽기 좋은 수로 떨어진다.
@@ -271,6 +402,16 @@
     const base = Math.pow(10, exp);
     for (const m of [1, 2, 2.5, 5, 10]) if (v <= m * base) return m * base;
     return 10 * base;
+  }
+
+  // 막대에 찍히는 주체명과 값도 화면 언어를 따른다. 서버 문자열을 그대로
+  // 쓰면 표는 영문인데 차트만 한글로 남는다.
+  function localizeCells(cells, unitLabel) {
+    if (!isEn()) return cells;
+    return cells.map((c) => Object.assign({}, c, {
+      label: tr(c.label),
+      value: fmtFlowValue(c.raw, unitLabel) ?? c.value,
+    }));
   }
 
   // 주식 수급·채권 수급이 같은 막대 차트를 쓴다. cells 는
@@ -335,18 +476,23 @@
     // 선물은 금액이 아니라 계약 수라 단위를 막대 바로 옆에 붙여둔다 —
     // 억원 표를 보다 넘어오면 같은 단위로 착각하기 쉽다.
     $("flow-chart-period").textContent = period
-      ? `· ${period.label} 누적 (단위 ${data.unitLabel})` : "";
+      ? (isEn()
+          ? `· ${tr(period.label)} cumulative (unit ${trUnit(data.unitLabel)})`
+          : `· ${period.label} 누적 (단위 ${data.unitLabel})`)
+      : "";
 
     if (!cells.length) { setHtml(box, ""); flowChartKey = ""; return; }
 
     // 스냅샷은 10초마다 오지만 수급 원본은 5분마다 갱신된다. 값이 그대로면
     // SVG를 다시 만들지 않는다 — 매번 새로 그리면 눈에 띄게 깜빡인다.
-    const key = `${data.label}|${flowChartPeriod}|${cells.map((c) => c.raw).join(",")}`;
+    const key = `${lang}|${data.label}|${flowChartPeriod}|${cells.map((c) => c.raw).join(",")}`;
     if (key === flowChartKey) return;
     flowChartKey = key;
 
-    setHtml(box, netBuyBarsSvg(cells, (v) => flowAxisLabel(v, data.unitLabel),
-      `${data.label} 주체별 순매수`));
+    setHtml(box, netBuyBarsSvg(localizeCells(cells, data.unitLabel),
+      (v) => flowAxisLabel(v, data.unitLabel),
+      isEn() ? `${tr(data.label)} net buying by investor`
+             : `${data.label} 주체별 순매수`));
   }
 
   // -- 채권 수급 (KOFIA 장외채권) ----------------------------------------
@@ -355,6 +501,7 @@
   // 축 포맷터를 따로 둔다.
   function bondAxisLabel(v) {
     if (v === 0) return "0";
+    if (isEn()) return I18N.fmtWon(v * 1e8, false);
     return Math.abs(v) >= 10000
       ? `${(v / 10000).toLocaleString("en-US", { maximumFractionDigits: 1 })}조`
       : `${Math.round(v).toLocaleString("en-US")}억`;
@@ -369,7 +516,7 @@
     const table = $("bflow-table");
 
     if (!bf || !periods.length) {
-      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">채권 수급을 불러오지 못했습니다.</div>`);
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.bflow"))}</div>`);
       $("bflow-foot").textContent = "";
       $("bflow-chart").innerHTML = "";
       return;
@@ -379,19 +526,19 @@
 
     // 채권종류 탭은 서버가 준 목록으로 만든다.
     const seg = $("bflow-seg");
-    if (seg.dataset.keys !== bf.bondTypes.join("|")) {
-      seg.dataset.keys = bf.bondTypes.join("|");
-      seg.innerHTML = bf.bondTypes.map((t) => `
+    if (seg.dataset.keys !== `${lang}|${bf.bondTypes.join("|")}`) {
+      seg.dataset.keys = `${lang}|${bf.bondTypes.join("|")}`;
+      seg.innerHTML = bf.bondTypes.map((bt) => `
         <label class="seg-opt" style="padding:4px 10px;font-size:11.5px">
-          <input type="radio" name="bflowsel" value="${esc(t)}"${t === bondFlowType ? " checked" : ""}><span>${esc(t)}</span>
+          <input type="radio" name="bflowsel" value="${esc(bt)}"${bt === bondFlowType ? " checked" : ""}><span>${esc(tr(bt))}</span>
         </label>`).join("");
       seg.querySelectorAll("input").forEach((el) => {
         el.addEventListener("change", () => { bondFlowType = el.value; renderBondFlow(); });
       });
     }
 
-    const head = `<div class="flow-row bflow-row flow-head"><span>투자자</span>${
-      periods.map((p) => `<span>${esc(p.label)}</span>`).join("")}</div>`;
+    const head = `<div class="flow-row bflow-row flow-head"><span>${esc(t("h.investor"))}</span>${
+      periods.map((p) => `<span>${esc(tr(p.label))}</span>`).join("")}</div>`;
     // 주식 수급 표와 세로로 붙어 있어서 단위를 헷갈리기 쉽다.
 
     const first = bf.periods[periods[0].key][bondFlowType] || [];
@@ -399,29 +546,36 @@
       const cells = periods.map((p) => {
         const c = (bf.periods[p.key][bondFlowType] || [])[i];
         return c
-          ? `<span class="mono flow-val" style="color:${c.color}">${esc(c.value)}</span>`
+          ? `<span class="mono flow-val" style="color:${c.color}">${esc(fmtFlowValue(c.raw, "원") ?? c.value)}</span>`
           : `<span class="mono flow-val" style="color:var(--c-empty)">—</span>`;
       }).join("");
-      return `<div class="flow-row bflow-row"><span class="flow-name">${esc(first[i].label)}</span>${cells}</div>`;
+      return `<div class="flow-row bflow-row"><span class="flow-name">${esc(tr(first[i].label))}</span>${cells}</div>`;
     }).join("");
 
     setHtml(table, head + rows);
     const d = bf.asOf;
+    const bfDate = `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)}`;
     $("bflow-foot").textContent =
-      `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 기준 · 단위 원 · 순매수 = 매수 − 매도 · 장외 거래대금`
-      + (bf.stale ? " · 갱신 실패(직전 값)" : "");
+      (isEn()
+        ? `As of ${bfDate} · unit KRW · ${t("foot.bflow")}`
+        : `${bfDate} 기준 · 단위 원 · ${t("foot.bflow")}`)
+      + (bf.stale ? " " + t("foot.stale") : "");
 
     const period = periods.find((p) => p.key === bondFlowPeriod);
     $("bflow-chart-label").textContent = period
-      ? `· ${bondFlowType} · ${period.label} 누적 (단위 억원)` : "";
+      ? (isEn()
+          ? `· ${tr(bondFlowType)} · ${tr(period.label)} cumulative (unit KRW)`
+          : `· ${bondFlowType} · ${period.label} 누적 (단위 원)`)
+      : "";
     const cells = bf.periods[bondFlowPeriod][bondFlowType] || [];
     if (!cells.length) { $("bflow-chart").innerHTML = ""; bondFlowChartKey = ""; return; }
 
-    const key = `${bondFlowType}|${bondFlowPeriod}|${cells.map((c) => c.raw).join(",")}`;
+    const key = `${lang}|${bondFlowType}|${bondFlowPeriod}|${cells.map((c) => c.raw).join(",")}`;
     if (key === bondFlowChartKey) return;
     bondFlowChartKey = key;
-    $("bflow-chart").innerHTML = netBuyBarsSvg(cells, bondAxisLabel,
-      `${bondFlowType} 주체별 순매수`);
+    $("bflow-chart").innerHTML = netBuyBarsSvg(localizeCells(cells, "원"), bondAxisLabel,
+      isEn() ? `${tr(bondFlowType)} net buying by investor`
+             : `${bondFlowType} 주체별 순매수`);
   }
 
   // -- 지표종목 최종호가 (채권 커브 패널 상단) ----------------------------
@@ -433,26 +587,27 @@
     const q = latest.bondQuotes;
     const list = $("quotes-list");
     if (!q || !q.rows.length) {
-      setHtml(list, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">최종호가를 불러오지 못했습니다.</div>`);
+      setHtml(list, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">${esc(t("err.quotes"))}</div>`);
       $("quotes-asof").textContent = "";
       return;
     }
 
     const head = `<div class="q-row q-head">
-      <span>종목</span><span>잔존기간</span><span class="q-num">수익률</span>
-      <span class="q-num">전일대비</span><span class="q-num">연중 최저~최고</span></div>`;
+      <span>${esc(t("h.issue"))}</span><span>${esc(t("h.residual"))}</span><span class="q-num">${esc(t("h.yield"))}</span>
+      <span class="q-num">${esc(t("h.chgPrev"))}</span><span class="q-num">${esc(t("h.yearRange"))}</span></div>`;
 
     setHtml(list, head + q.rows.map((r) => `
       <div class="q-row">
-        <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(r.label)}</span>
-        <span style="color:var(--c-dim);font-size:11px">${esc(r.term)}</span>
+        <span style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(tr(r.label))}</span>
+        <span style="color:var(--c-dim);font-size:11px">${esc(tr(r.term))}</span>
         <span class="mono q-num" style="font-weight:500">${esc(r["yield"])}</span>
         <span class="mono q-num" style="color:${r.changeColor}">${r.arrow} ${esc(r.changeBp)}</span>
         <span class="mono q-num" style="color:var(--c-dim);font-size:11px">${esc(r.range)}</span>
       </div>`).join(""));
 
     const d = q.asOf;
-    $("quotes-asof").textContent = `· ${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} · 단위 %`;
+    $("quotes-asof").textContent =
+      `· ${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} · ${t("foot.quotes")}`;
   }
 
   // -- 원화 스왑 (FX 스왑포인트 · IRS/CRS) --------------------------------
@@ -465,7 +620,7 @@
 
     const swapBox = $("swap-table");
     if (!sp || !sp.rows.length) {
-      setHtml(swapBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">스왑포인트를 불러오지 못했습니다.</div>`);
+      setHtml(swapBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">${esc(t("err.swap"))}</div>`);
       $("swap-spot").textContent = "";
     } else {
       // 양대 중개사(서울외국환중개·한국자금중개)를 나란히 — 같은 상품의
@@ -479,25 +634,29 @@
             v === "—" ? "color:var(--c-empty)" : i >= 2 ? "font-weight:500" : "color:var(--c-sub)"
           }">${esc(v)}</span>`).join("");
       const gHead = (k) =>
-        ["Bid", "Offer", "Mid", "연율"].map((t, i) =>
-          `<span class="sw-num sw-${k}${edge(i)}">${t}</span>`).join("");
+        ["Bid", "Offer", "Mid", t("h.annual")].map((h, i) =>
+          `<span class="sw-num sw-${k}${edge(i)}">${esc(h)}</span>`).join("");
 
       const head = `<div class="sw-row sw-grouphead">
           <span></span>
-          <span class="sw-grp sw-s sw-edge-l sw-edge-r">SMBS · 서울외국환중개</span>
-          <span class="sw-grp sw-k sw-edge-l sw-edge-r">KMB · 한국자금중개</span>
+          <span class="sw-grp sw-s sw-edge-l sw-edge-r">${esc(t("sw.smbs"))}</span>
+          <span class="sw-grp sw-k sw-edge-l sw-edge-r">${esc(t("sw.kmb"))}</span>
         </div>
-        <div class="sw-row sw-head"><span>만기</span>
+        <div class="sw-row sw-head"><span>${esc(t("h.tenor"))}</span>
           ${gHead("s")}${gHead("k")}</div>`;
       setHtml(swapBox, head + sp.rows.map((r) => `
         <div class="sw-row">
           <span style="font-weight:500">${esc(r.label)}</span>
           ${group(r.smbs, "s")}${group(r.kmb, "k")}
         </div>`).join(""));
+      const spotSrc = sp.spotSource
+        ? ` (${tr(sp.spotSource)}${sp.spotAsOf ? ` ${sp.spotAsOf}` : ""})` : "";
       $("swap-spot").textContent =
-        `· 현물 USD/KRW ${sp.spot}${sp.spotSource ? ` (${sp.spotSource}${sp.spotAsOf ? ` ${sp.spotAsOf}` : ""})` : ""} 기준`
-        + (sp.spotLive && sp.spotLive !== sp.spot ? ` · 실시간 ${sp.spotLive}` : "")
-        + ` · 포인트 단위 전(錢) · Mid=(Bid+Offer)/2 · 연율은 각사 Mid 를 ACT/360 실제일수로 환산`;
+        (isEn()
+          ? `· ${t("foot.spotUsdkrw")} ${sp.spot}${spotSrc}`
+          : `· ${t("foot.spotUsdkrw")} ${sp.spot}${spotSrc} 기준`)
+        + (sp.spotLive && sp.spotLive !== sp.spot ? ` · ${t("foot.live")} ${sp.spotLive}` : "")
+        + ` · ${t("foot.swapNote")}`;
     }
 
     // FX-implied 원화금리 · CCS 베이시스 — 스왑포인트를 금리로 편 것.
@@ -507,7 +666,7 @@
     const fi = latest.fxImplied;
     const fiBox = $("fximplied-table");
     if (!fi || !fi.rows.length) {
-      setHtml(fiBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">스왑포인트·IRS 1Y·CD 91일·USD 텀금리가 모두 있어야 계산됩니다.</div>`);
+      setHtml(fiBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">${esc(t("err.fximplied"))}</div>`);
       setHtml($("fximplied-variants"), "");
       setHtml($("fximplied-warn"), "");
       $("fximplied-src").textContent = "";
@@ -516,7 +675,7 @@
       // (pricer `KRW Zero` 대조·회귀테스트용) 표에는 안 올린다 — 데스크가
       // 읽는 건 IRS 와 같은 물건인 par 쪽이고, 두 금리를 나란히 두면 어느 게
       // 결론인지 흐려진다.
-      const head = `<div class="fi-row fi-head"><span>만기</span><span class="sw-num">일수</span>
+      const head = `<div class="fi-row fi-head"><span>${esc(t("h.tenor"))}</span><span class="sw-num">${esc(t("h.days"))}</span>
         <span class="sw-num">swap rate</span><span class="sw-num">USD</span>
         <span class="sw-num">par yield</span><span class="sw-num">KRW IRS</span>
         <span class="sw-num">basis</span></div>`;
@@ -534,27 +693,27 @@
 
       // 6M 보간은 값 하나가 아니라 폭으로 읽어야 해서 방식별 값을 다 편다.
       setHtml($("fximplied-variants"), fi.sixVariants.length
-        ? `<span style="color:var(--c-sub)">6M IRS 보간</span>`
+        ? `<span style="color:var(--c-sub)">${esc(t("fi.sixInterp"))}</span>`
           + fi.sixVariants.map((v) =>
-              `<span>${esc(v.name)} <b style="font-weight:500">${esc(v.value)}</b></span>`).join("")
-          + `<span>폭 ${esc(fi.sixSpreadBp)}</span>`
+              `<span>${esc(tr(v.name))} <b style="font-weight:500">${esc(v.value)}</b></span>`).join("")
+          + `<span>${esc(t("fi.spread"))} ${esc(fi.sixSpreadBp)}</span>`
         : "");
       setHtml($("fximplied-warn"),
-        (fi.warnings || []).map((w) => `<div>${esc(w)}</div>`).join(""));
+        (fi.warnings || []).map((w) => `<div>${esc(tr(w))}</div>`).join(""));
       $("fximplied-src").textContent =
-        `· 스왑포인트·IRS ${fi.pointSource} ${fi.quoteDate || ""} 고시`
-        + ` · 스팟일 ${fi.spotDate} (고시일 T+2)`
-        + (fi.spotSource ? ` · 스팟 ${fi.spotSource}${fi.spotAsOf ? ` ${fi.spotAsOf}` : ""}` : "")
-        + ` · USD ${fi.usdSource} ${fi.usdAsOf}`;
+        `· ${t("foot.swapIrsQuoted")} ${fi.pointSource} ${fi.quoteDate || ""} ${t("foot.quoted")}`
+        + ` · ${t("foot.spotDate")} ${fi.spotDate} ${t("foot.spotDateNote")}`
+        + (fi.spotSource ? ` · ${t("foot.spot")} ${tr(fi.spotSource)}${fi.spotAsOf ? ` ${fi.spotAsOf}` : ""}` : "")
+        + ` · USD ${tr(fi.usdSource)} ${fi.usdAsOf}`;
     }
 
     const icBox = $("irscrs-table");
     if (!ic || !ic.rows.length) {
-      setHtml(icBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">IRS·CRS를 불러오지 못했습니다.</div>`);
+      setHtml(icBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">${esc(t("err.irscrs"))}</div>`);
     } else {
-      const head = `<div class="ic-row ic-head"><span>만기</span>
+      const head = `<div class="ic-row ic-head"><span>${esc(t("h.tenor"))}</span>
         <span class="sw-num">IRS</span><span class="sw-num">CRS</span>
-        <span class="sw-num">베이시스</span></div>`;
+        <span class="sw-num">${esc(t("h.basis"))}</span></div>`;
       setHtml(icBox, head + ic.rows.map((r) => `
         <div class="ic-row">
           <span style="font-weight:500">${esc(r.label)}</span>
@@ -565,18 +724,19 @@
     }
 
     if (ic && ic.source) {
-      $("irscrs-src").textContent = `· 통화베이시스 = CRS − IRS · ${ic.source} Mid 고시`;
+      $("irscrs-src").textContent =
+        `${t("swap.irscrs.note")} · ${ic.source} ${t("foot.midQuote")}`;
     }
 
     // 국고채(현물) − IRS 스프레드 — 채권과 스왑 커브 사이의 괴리.
     const bi = latest.bondIrs;
     const biBox = $("bondirs-table");
     if (!bi || !bi.rows.length) {
-      setHtml(biBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">국고채 또는 IRS 데이터를 기다리는 중입니다.</div>`);
+      setHtml(biBox, `<div style="font-size:12px;color:var(--c-label);padding:8px 0">${esc(t("err.bondirs"))}</div>`);
     } else {
-      const head = `<div class="bi-row bi-head"><span>만기</span>
-        <span class="sw-num">국고채</span><span class="sw-num">IRS</span>
-        <span class="sw-num">스프레드</span></div>`;
+      const head = `<div class="bi-row bi-head"><span>${esc(t("h.tenor"))}</span>
+        <span class="sw-num">${esc(t("h.ktb"))}</span><span class="sw-num">IRS</span>
+        <span class="sw-num">${esc(t("h.spread"))}</span></div>`;
       setHtml(biBox, head + bi.rows.map((r) => `
         <div class="bi-row">
           <span style="font-weight:500">${esc(r.label)}</span>
@@ -587,7 +747,7 @@
     }
 
     const stamp = (sp && sp.asOf) || (ic && ic.asOf) || "";
-    $("swap-asof").textContent = stamp ? `${stamp} 고시` : "";
+    $("swap-asof").textContent = stamp ? `${stamp} ${t("foot.quoted")}` : "";
   }
 
   // -- 단기금융시장 금리 (CP · 전단채) ------------------------------------
@@ -597,26 +757,27 @@
     const st = latest.shortTermRates;
     const table = $("strate-table");
     if (!st || !st.rows.length) {
-      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">단기금리를 불러오지 못했습니다.</div>`);
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.strate"))}</div>`);
       $("strate-asof").textContent = "";
       $("strate-foot").textContent = "";
       return;
     }
 
-    const head = `<div class="st-row st-head"><span>구분</span>${
-      st.tenors.map((t) => `<span class="st-num">${esc(t)}</span>`).join("")
-      }<span class="st-num">당일 거래대금</span></div>`;
+    const head = `<div class="st-row st-head"><span>${esc(t("h.kind"))}</span>${
+      st.tenors.map((tn) => `<span class="st-num">${esc(tr(tn))}</span>`).join("")
+      }<span class="st-num">${esc(t("h.dayAmount"))}</span></div>`;
 
     setHtml(table, head + st.rows.map((r) => `
       <div class="st-row">
-        <span style="font-weight:500;white-space:nowrap">${esc(r.label)}</span>
+        <span style="font-weight:500;white-space:nowrap">${esc(tr(r.label))}</span>
         ${r.rates.map((v) => `<span class="mono st-num"${v === "—" ? ' style="color:var(--c-empty)"' : ""}>${esc(v)}</span>`).join("")}
-        <span class="mono st-num" style="color:var(--c-dim)">${esc(r.amount)}</span>
+        <span class="mono st-num" style="color:var(--c-dim)">${esc(amt(r.amount))}</span>
       </div>`).join(""));
 
     const d = st.asOf;
-    $("strate-asof").textContent = `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시`;
-    $("strate-foot").textContent = "단위 % · 만기구간별 가중평균금리 · 거래가 거의 없는 구간의 금리는 참고치";
+    $("strate-asof").textContent =
+      `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} ${t("foot.quoted")}`;
+    $("strate-foot").textContent = t("foot.strate");
   }
 
   // -- 외환보유액 단기 유출예정액 (IMF 표 II) ----------------------------
@@ -626,15 +787,15 @@
     const rd = latest.reserveDrains;
     const table = $("drain-table");
     if (!rd || !rd.rows.length) {
-      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">유출예정액을 불러오지 못했습니다.</div>`);
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.drain"))}</div>`);
       $("drain-asof").textContent = "";
       return;
     }
 
     // 머리행의 "구분" 칸도 rd-name 이다 — 가로로 밀 때 라벨 열과 같이 서 있어야
     // 어느 열이 어느 만기구간인지 계속 읽힌다.
-    const head = `<div class="rd-row rd-head"><span class="rd-name">구분</span>${
-      rd.columns.map((c) => `<span class="rd-num">${esc(c)}</span>`).join("")}</div>`;
+    const head = `<div class="rd-row rd-head"><span class="rd-name">${esc(t("h.kind"))}</span>${
+      rd.columns.map((c) => `<span class="rd-num">${esc(tr(c))}</span>`).join("")}</div>`;
 
     setHtml(table, head + rd.rows.map((r) => {
       const cells = r.values.map((v, i) => {
@@ -647,10 +808,12 @@
       const cls = "rd-row"
         + (r.level === 0 ? " rd-top" : " rd-sub")
         + (r.highlight ? " rd-hi" : "");
-      return `<div class="${cls}"><span class="rd-name">${esc(r.label)}</span>${cells}</div>`;
+      return `<div class="${cls}"><span class="rd-name">${esc(tr(r.label))}</span>${cells}</div>`;
     }).join(""));
 
-    $("drain-asof").textContent = `${rd.asOf} 기준 · ${rd.updated} 공표`;
+    $("drain-asof").textContent = isEn()
+      ? `As of ${rd.asOf} · published ${rd.updated}`
+      : `${rd.asOf} 기준 · ${rd.updated} 공표`;
   }
 
   // -- 채권 수익률 곡선 --------------------------------------------------
@@ -660,14 +823,14 @@
     const bc = latest.bondCurve;
     const table = $("curve-table");
     if (!bc || !bc.curves.length) {
-      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">수익률 곡선을 불러오지 못했습니다.</div>`);
+      setHtml(table, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.curve"))}</div>`);
       $("curve-asof").textContent = "";
       $("curve-chart").innerHTML = "";
       return;
     }
 
-    const head = `<div class="cv-row cv-head"><span>종류</span>${
-      bc.tenors.map((t) => `<span>${esc(t)}</span>`).join("")}</div>`;
+    const head = `<div class="cv-row cv-head"><span>${esc(t("h.bondType"))}</span>${
+      bc.tenors.map((tn) => `<span>${esc(tr(tn))}</span>`).join("")}</div>`;
 
     const rows = bc.curves.map((c, ci) => {
       const byTenor = new Map(c.points.map((p) => [p.label, p]));
@@ -678,27 +841,31 @@
         const spread = p.spread == null ? "" : `<small>${p.spread >= 0 ? "+" : ""}${p.spread}bp</small>`;
         return `<span class="mono cv-val">${esc(p.value)}${spread}</span>`;
       }).join("");
-      return `<div class="cv-row${ci === 0 ? " cv-base" : ""}"><span class="cv-name">${esc(c.label)}</span>${cells}</div>`;
+      return `<div class="cv-row${ci === 0 ? " cv-base" : ""}"><span class="cv-name">${esc(tr(c.label))}</span>${cells}</div>`;
     }).join("");
 
     setHtml(table, head + rows);
     const d = bc.asOf;
-    $("curve-asof").textContent = d.length === 8 ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} 고시` : d;
-    $("curve-foot").textContent = "단위 % · 값 아래는 국고채권 대비 스프레드"
-      + (bc.stale ? " · 갱신 실패(직전 값)" : "");
+    $("curve-asof").textContent = d.length === 8
+      ? `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6)} ${t("foot.quoted")}` : d;
+    $("curve-foot").textContent = t("foot.curve")
+      + (bc.stale ? " " + t("foot.stale") : "");
 
     // 종류 선택 탭은 서버가 준 커브 목록에서 만든다 (종류가 바뀌어도 따라간다)
     const seg = $("curve-seg");
-    if (seg.dataset.keys !== bc.curves.map((c) => c.key).join("|")) {
-      seg.dataset.keys = bc.curves.map((c) => c.key).join("|");
-      seg.innerHTML = bc.curves.map((c, i) => `
+    const segKey = `${lang}|${bc.curves.map((c) => c.key).join("|")}`;
+    if (seg.dataset.keys !== segKey) {
+      seg.dataset.keys = segKey;
+      // 고른 커브가 목록에서 사라졌으면(종류명이 바뀌었을 때) 첫 줄로 돌린다.
+      // 탭을 그리기 전에 정해야 어느 탭에 표시가 붙을지가 맞는다.
+      if (!bc.curves.some((c) => c.key === curveKey)) curveKey = bc.curves[0].key;
+      seg.innerHTML = bc.curves.map((c) => `
         <label class="seg-opt" style="padding:3px 10px;font-size:11.5px">
-          <input type="radio" name="curvesel" value="${esc(c.key)}"${i === 0 ? " checked" : ""}><span>${esc(c.label)}</span>
+          <input type="radio" name="curvesel" value="${esc(c.key)}"${c.key === curveKey ? " checked" : ""}><span>${esc(tr(c.label))}</span>
         </label>`).join("");
       seg.querySelectorAll("input").forEach((el) => {
         el.addEventListener("change", () => { curveKey = el.value; renderBondCurve(); });
       });
-      if (!bc.curves.some((c) => c.key === curveKey)) curveKey = bc.curves[0].key;
     }
 
     renderCurveChart(bc.curves.find((c) => c.key === curveKey) || bc.curves[0]);
@@ -708,7 +875,7 @@
   // 식별이 아니라 강조만 하고, 범례 없이 제목이 무엇을 그린 건지 말한다.
   function renderCurveChart(curve) {
     const box = $("curve-chart");
-    $("curve-chart-label").textContent = `· ${curve.label}`;
+    $("curve-chart-label").textContent = `· ${tr(curve.label)}`;
     const pts = curve.points;
     if (pts.length < 2) { setHtml(box, ""); return; }
 
@@ -739,17 +906,17 @@
       const cx = xFor(i), cy = yFor(p.yield);
       return `
         <g>
-          <title>${esc(p.label)} ${esc(p.value)}%</title>
+          <title>${esc(tr(p.label))} ${esc(p.value)}%</title>
           <circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/>
           <circle cx="${cx}" cy="${cy}" r="4" fill="#5980a6" stroke="#f2f2f3" stroke-width="2"/>
           <text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(p.value)}</text>
-          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(p.label)}</text>
+          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(tr(p.label))}</text>
         </g>`;
     }).join("");
 
     setHtml(box, `
       <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet"
-           role="img" aria-label="${esc(curve.label)} 만기별 수익률">
+           role="img" aria-label="${esc(isEn() ? `${tr(curve.label)} yields by tenor` : `${curve.label} 만기별 수익률`)}">
         ${grid}
         <path d="${area}" fill="rgba(89,128,166,.10)"/>
         <path d="${line}" fill="none" stroke="#5980a6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
@@ -763,11 +930,11 @@
     if (!latest) return;
     const rows = latest.fxBondIssues || [];
     $("fxbond-empty").style.display = rows.length ? "none" : "block";
-    $("fxbond-count").textContent = rows.length ? `${rows.length}건` : "";
+    $("fxbond-count").textContent = rows.length ? fmtCount(rows.length) : "";
 
     const head = `<div class="fb-row fb-head">
-      <span>발행일</span><span>발행사</span><span>종목</span><span>통화</span>
-      <span class="fb-num">발행액</span><span class="fb-num">쿠폰</span><span class="fb-num">만기</span></div>`;
+      <span>${esc(t("h.issueDate"))}</span><span>${esc(t("h.issuer"))}</span><span>${esc(t("h.issue"))}</span><span>${esc(t("h.currency"))}</span>
+      <span class="fb-num">${esc(t("h.amount"))}</span><span class="fb-num">${esc(t("h.coupon"))}</span><span class="fb-num">${esc(t("h.maturity"))}</span></div>`;
 
     setHtml($("fxbond-list"), head + rows.map((r) => `
       <div class="fb-row">
@@ -775,7 +942,7 @@
         <span class="fb-name" style="font-weight:500">${esc(r.issuer)}</span>
         <span class="fb-name" style="color:var(--c-sub)" title="${esc(r.name)}">${esc(r.name)}</span>
         <span class="mono fb-cur" style="font-size:11px">${esc(r.currency)}</span>
-        <span class="mono fb-num">${esc(r.amount)}</span>
+        <span class="mono fb-num">${esc(amt(r.amount))}</span>
         <span class="mono fb-num">${esc(r.coupon)}</span>
         <span class="mono fb-num" style="color:var(--c-dim)">${esc(r.maturity)}</span>
       </div>`).join(""));
@@ -790,7 +957,7 @@
     const foot = $("basis-foot");
 
     if (!b) {
-      setHtml(body, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">베이시스를 불러오지 못했습니다.</div>`);
+      setHtml(body, `<div style="font-size:12px;color:var(--c-label);padding:10px 0">${esc(t("err.basis"))}</div>`);
       foot.textContent = "";
       return;
     }
@@ -801,25 +968,25 @@
     setHtml(body, `
       <div class="bs-big">
         <b class="mono" style="color:${b.basisColor}">${esc(b.basis)}</b>
-        <span class="bs-tag" style="color:${b.basisColor}">${esc(b.state)}</span>
-        <span style="font-size:11px;color:var(--c-label);margin-left:auto">베이시스 (선물−현물)</span>
+        <span class="bs-tag" style="color:${b.basisColor}">${esc(tr(b.state))}</span>
+        <span style="font-size:11px;color:var(--c-label);margin-left:auto">${esc(t("bs.label"))}</span>
       </div>
       <div class="bs-stats">
-        ${stat("현물 KOSPI200", b.spot)}
-        ${stat(`선물 ${b.contract ? `(${b.contract})` : ""}`.trim(), b.futures)}
-        ${stat("이론가", b.theoretical)}
-        ${stat("이론 베이시스", b.theoBasis)}
-        ${stat("괴리율", `${b.spread} · ${b.valuation}`, b.spreadColor)}
-        ${stat("만기까지", b.daysToExpiry != null ? `${b.daysToExpiry}일 (${b.expiry})` : "—")}
+        ${stat(t("bs.spot"), b.spot)}
+        ${stat(`${t("bs.futures")} ${b.contract ? `(${b.contract})` : ""}`.trim(), b.futures)}
+        ${stat(t("bs.theoretical"), b.theoretical)}
+        ${stat(t("bs.theoBasis"), b.theoBasis)}
+        ${stat(t("bs.spread"), `${b.spread} · ${tr(b.valuation)}`, b.spreadColor)}
+        ${stat(t("bs.toExpiry"), b.daysToExpiry != null ? `${b.daysToExpiry}${isEn() ? " " : ""}${t("bs.days")} (${b.expiry})` : "—")}
       </div>`);
 
-    foot.textContent = `${b.stamp}\n${b.assumption}`;
+    foot.textContent = `${tr(b.stamp)}\n${tr(b.assumption)}`;
   }
 
   // -- 키워드 뉴스 -------------------------------------------------------
 
   function renderKeywordNews() {
-    if (!latest) return;
+    if (!latest || isEn()) return;   // 네이버 한국어 검색 — 영문판에는 없다
     const groups = latest.keywordNews || {};
     const group = groups[kwNewsGroup];
     const items = (group && group.items) || [];
@@ -906,7 +1073,13 @@
 
   function filteredNews() {
     if (!latest || !latest.news) return [];
-    return latest.news.filter(newsMatchesKeywords);
+    // 영문판은 네이버에서 온 한국어 헤드라인을 빼고 Yahoo 것만 남긴다.
+    // origin 이 없는 옛 스냅샷이면 한글이 섞였는지로 가른다.
+    const rows = isEn()
+      ? latest.news.filter((n) =>
+          n.origin ? n.origin !== "naver" : !/[가-힯]/.test(n.headline || ""))
+      : latest.news;
+    return rows.filter(newsMatchesKeywords);
   }
 
   function renderNewsChips() {
@@ -981,7 +1154,12 @@
 
     $("news-empty").style.display = (latest && latest.news && latest.news.length > 0 && all.length === 0) ? "block" : "none";
     renderPagination("news-pagination", newsPage, totalPages, (p) => { newsPage = p; renderNews(); });
-    $("news-count").textContent = latest && latest.news ? `총 ${latest.news.length}건` : "";
+    // 영문판은 목록에서 뺀 한국어 기사까지 세면 숫자가 화면과 안 맞는다 —
+    // 키워드 필터 전, 언어 필터 후의 건수를 센다.
+    const feed = !latest || !latest.news ? null
+      : (isEn() ? latest.news.filter((n) =>
+          n.origin ? n.origin !== "naver" : !/[가-힯]/.test(n.headline || "")) : latest.news);
+    $("news-count").textContent = feed ? fmtCount(feed.length, true) : "";
   }
 
   $("news-kw-input").addEventListener("keydown", (ev) => {
@@ -1069,26 +1247,29 @@
   function indicatorIndex() {
     if (!latest) return [];
     const out = [];
-    (latest.fxRegions || []).forEach((g) => (g.rows || []).forEach((r) => out.push({
-      type: "ind", kind: "fx", symbol: r.symbol, label: r.pair, sub: r.name,
-      tag: "환율", data: { name: r.name, pair: r.pair },
-    })));
-    (latest.idxMain || []).forEach((r) => out.push({
-      type: "ind", kind: "index", symbol: r.symbol, label: r.name, sub: "",
-      tag: "지수", data: { name: r.name },
-    }));
-    (latest.rates || []).forEach((r) => out.push({
-      type: "ind", kind: "rate", symbol: r.symbol, label: r.name, sub: r.sub,
-      tag: "미국 금리", data: { name: r.name, sub: r.sub },
-    }));
-    (latest.krRates || []).forEach((r) => out.push({
-      type: "ind", kind: "krrate", symbol: r.code, label: r.name, sub: "",
-      tag: "한국 금리", data: { name: r.name },
-    }));
-    (latest.commAll || []).forEach((r) => out.push({
-      type: "ind", kind: "commodity", symbol: r.symbol, label: r.name, sub: r.contract,
-      tag: "원자재", data: { name: r.name, contract: r.contract },
-    }));
+    // 화면에 보이는 이름(영문판이면 영문)으로 찍되, 원문도 alt 에 남겨
+    // 영문 화면에서 "삼성" 처럼 한글로 쳐도 걸리게 한다.
+    const push = (it, alt) => out.push(Object.assign(it, { alt: alt || "" }));
+    (latest.fxRegions || []).forEach((g) => (g.rows || []).forEach((r) => push({
+      type: "ind", kind: "fx", symbol: r.symbol, label: tr(r.pair), sub: tr(r.name),
+      tag: t("tag.fx"), data: { name: r.name, pair: r.pair },
+    }, `${r.pair} ${r.name}`)));
+    (latest.idxMain || []).forEach((r) => push({
+      type: "ind", kind: "index", symbol: r.symbol, label: tr(r.name), sub: "",
+      tag: t("tag.index"), data: { name: r.name },
+    }, r.name));
+    (latest.rates || []).forEach((r) => push({
+      type: "ind", kind: "rate", symbol: r.symbol, label: tr(r.name), sub: r.sub,
+      tag: t("tag.usrate"), data: { name: r.name, sub: r.sub },
+    }, r.name));
+    (latest.krRates || []).forEach((r) => push({
+      type: "ind", kind: "krrate", symbol: r.code, label: tr(r.name), sub: "",
+      tag: t("tag.krrate"), data: { name: r.name },
+    }, r.name));
+    (latest.commAll || []).forEach((r) => push({
+      type: "ind", kind: "commodity", symbol: r.symbol, label: tr(r.name), sub: r.contract,
+      tag: t("tag.commodity"), data: { name: r.name, contract: r.contract },
+    }, r.name));
     return out;
   }
 
@@ -1097,7 +1278,7 @@
   function gsRender(indMatches, stockMatches) {
     gsItems = [...indMatches, ...stockMatches];
     if (!gsItems.length) {
-      gsResults.innerHTML = '<div style="padding:10px;font-size:12px;color:var(--c-label)">검색 결과 없음</div>';
+      gsResults.innerHTML = `<div style="padding:10px;font-size:12px;color:var(--c-label)">${esc(t("gs.noresult"))}</div>`;
       gsResults.style.display = "block";
       return;
     }
@@ -1110,11 +1291,11 @@
     let html = "";
     let i = 0;
     if (indMatches.length) {
-      html += secLabel("지표 Indicators");
+      html += secLabel(esc(t("gs.indicators")));
       indMatches.forEach((it) => { html += row(it, i++); });
     }
     if (stockMatches.length) {
-      html += secLabel("종목 Stocks");
+      html += secLabel(esc(t("gs.stocks")));
       stockMatches.forEach((it) => { html += row(it, i++); });
     }
     gsResults.innerHTML = html;
@@ -1139,6 +1320,7 @@
     const indMatches = indicatorIndex().filter((it) =>
       it.label.toLowerCase().includes(needle)
       || (it.sub || "").toLowerCase().includes(needle)
+      || (it.alt || "").toLowerCase().includes(needle)
       || it.symbol.toLowerCase().includes(needle)
     ).slice(0, 6);
 
@@ -1153,7 +1335,7 @@
       if (res.ok) {
         stockMatches = (await res.json()).map((it) => ({
           type: "stock", symbol: it.symbol, name: it.name,
-          label: it.name, sub: `${it.market} · ${it.symbol}`, tag: "종목",
+          label: it.name, sub: `${it.market} · ${it.symbol}`, tag: t("tag.stock"),
         }));
       }
     } catch (e) { console.error("stock search failed", e); }
@@ -1231,13 +1413,13 @@
     const ids = CHART_IDS[prefix];
     if (chart && chart.values && chart.values.length >= 2) {
       drawPopChart(prefix, chart.values);
-      $(ids.label).textContent = chart.label || "";
-      $(ids.hilo).textContent = chart.hiloText || "";
+      $(ids.label).textContent = tr(chart.label || "");
+      $(ids.hilo).textContent = tr(chart.hiloText || "");
       $(prefix + "-axis-l").textContent = chart.axisL || "";
       $(prefix + "-axis-r").textContent = chart.axisR || "";
     } else {
       drawPopChart(prefix, null);
-      $(ids.hilo).textContent = "차트 데이터 없음";
+      $(ids.hilo).textContent = t("chart.nodata");
       $(prefix + "-axis-l").textContent = "";
       $(prefix + "-axis-r").textContent = "";
     }
@@ -1292,8 +1474,9 @@
   }
 
   function nowAsOf() {
-    const t = kstNow();
-    return `기준 ${t.hour}:${t.minute}:${t.second} KST`;
+    const k = kstNow();
+    const clock = `${k.hour}:${k.minute}:${k.second} KST`;
+    return isEn() ? `as of ${clock}` : `기준 ${clock}`;
   }
 
   // -- 모달 공통: 포커스 가두기 + 뒤 페이지 잠금 --------------------------
@@ -1349,7 +1532,7 @@
   }
 
   function popupNewsHtml(news) {
-    if (!news || !news.length) return '<div style="font-size:12px;color:var(--c-label);padding:6px 0">관련 뉴스 없음</div>';
+    if (!news || !news.length) return `<div style="font-size:12px;color:var(--c-label);padding:6px 0">${esc(t("news.none"))}</div>`;
     return news.map((n) => `
       <div class="pop-news-row">
         ${safeUrl(n.url)
@@ -1376,7 +1559,7 @@
     $("stk-chg").textContent = "";
     $("stk-asof").textContent = "";
     $("stk-source").textContent = "";
-    $("stk-chart-label").textContent = "당일 분봉 · Intraday";
+    $("stk-chart-label").textContent = t("pop.intraday");
     $("stk-hilo").textContent = "";
     $("stk-axis-l").textContent = "";
     $("stk-axis-r").textContent = "";
@@ -1398,26 +1581,26 @@
       $("stk-chg").style.color = d.color;
       $("stk-asof").textContent = nowAsOf();
       const isKr = symbol.endsWith(".KS") || symbol.endsWith(".KQ");
-      $("stk-source").textContent = isKr ? "Naver Finance · 실시간" : "Yahoo Finance · 실시간";
+      $("stk-source").textContent = isKr ? t("src.naverLive") : t("src.yahooLive");
       applyChart("stk", d.chart);
 
-      $("stk-volume").textContent = d.volume;
-      $("stk-tradingValue").textContent = d.tradingValue;
-      $("stk-marketCap").textContent = d.marketCap;
+      $("stk-volume").textContent = amt(d.volume);
+      $("stk-tradingValue").textContent = amt(d.tradingValue);
+      $("stk-marketCap").textContent = amt(d.marketCap);
       $("stk-open").textContent = d.open;
       $("stk-high").textContent = d.high;
       $("stk-low").textContent = d.low;
       $("stk-week52High").textContent = d.week52High;
       $("stk-week52Low").textContent = d.week52Low;
       $("stk-foreignRate").textContent = d.foreignRate;
-      $("stk-per").textContent = d.per;
-      $("stk-pbr").textContent = d.pbr;
+      $("stk-per").textContent = tr(d.per);
+      $("stk-pbr").textContent = tr(d.pbr);
       $("stk-prevClose").textContent = d.prevClose;
 
       $("stk-news").innerHTML = popupNewsHtml(d.news);
     } catch (e) {
       console.error("stock detail fetch failed", e);
-      $("stk-price").textContent = "오류";
+      $("stk-price").textContent = t("err.generic");
       applyChart("stk", null);
     }
   }
@@ -1440,17 +1623,17 @@
   let currentIndicatorKey = null;
 
   const INDICATOR_SOURCES = {
-    fx: "Yahoo Finance · 실시간",
-    index: "Yahoo Finance · 실시간",
-    commodity: "Yahoo Finance · 실시간",
-    rate: "Yahoo Finance · 실시간",
-    krrate: "Naver Finance · 마켓인덱스",
+    fx: "src.yahooLive",
+    index: "src.yahooLive",
+    commodity: "src.yahooLive",
+    rate: "src.yahooLive",
+    krrate: "src.naverIndex",
   };
   const NAVER_INDEX_SYMBOLS = ["^KS11", "^KQ11", "^KS200"];
 
   function renderIndicatorStats(stats) {
     $("ind-stats").innerHTML = stats.map((s) => `
-      <div class="stat"><span>${esc(s.label)}</span><b${s.color ? ` style="color:${s.color}"` : ""}>${esc(s.value)}</b></div>
+      <div class="stat"><span>${esc(tr(s.label))}</span><b${s.color ? ` style="color:${s.color}"` : ""}>${esc(amt(tr(s.value)))}</b></div>
     `).join("");
   }
 
@@ -1460,8 +1643,8 @@
     chartCtx.ind = { kind, symbol };
     openModal(indicatorBackdrop);
     setRangePressed("ind-range", "1D");
-    $("ind-title").textContent = data.pair || data.name || symbol;
-    $("ind-subtitle").textContent = kind === "fx" ? (data.name || "") : (data.sub || "");
+    $("ind-title").textContent = tr(data.pair || data.name || symbol);
+    $("ind-subtitle").textContent = kind === "fx" ? tr(data.name || "") : (data.sub || "");
     $("ind-tag").textContent = "";
     $("ind-price").textContent = "…";
     $("ind-price").style.color = "";
@@ -1488,16 +1671,17 @@
       const d = await res.json();
       if (currentIndicatorKey !== key) return; // user moved on to another indicator
 
-      $("ind-title").textContent = d.title;
-      $("ind-subtitle").textContent = d.subtitle || "";
-      $("ind-tag").textContent = d.tag || "";
+      $("ind-title").textContent = tr(d.title);
+      $("ind-subtitle").textContent = tr(d.subtitle || "");
+      $("ind-tag").textContent = tr(d.tag || "");
       $("ind-price").textContent = d.price;
       $("ind-price").style.color = d.color;
-      $("ind-chg").textContent = `${d.arrow} ${d.chg}${d.pct ? ` (${d.pct})` : ""}`;
+      $("ind-chg").textContent = `${d.arrow} ${d.chg}${d.pct ? ` (${tr(d.pct)})` : ""}`;
       $("ind-chg").style.color = d.color;
       $("ind-asof").textContent = nowAsOf();
       $("ind-source").textContent = (kind === "index" && NAVER_INDEX_SYMBOLS.includes(symbol))
-        ? "Naver Finance · 실시간" : (INDICATOR_SOURCES[kind] || "");
+        ? t("src.naverLive")
+        : (INDICATOR_SOURCES[kind] ? t(INDICATOR_SOURCES[kind]) : "");
       applyChart("ind", d.chart);
       renderIndicatorStats(d.stats || []);
 
@@ -1507,7 +1691,7 @@
       }
     } catch (e) {
       console.error("indicator detail fetch failed", e);
-      $("ind-price").textContent = "오류";
+      $("ind-price").textContent = t("err.generic");
       applyChart("ind", null);
     }
   }
@@ -1538,6 +1722,7 @@
 
   // USD 금액을 "1,493억 달러" 형태로. (억 = 1e8)
   function fmtCustody(v) {
+    if (isEn()) return "$" + (v / 1e9).toFixed(1) + "B";
     const eok = v / 1e8;
     return eok.toLocaleString("ko-KR", { maximumFractionDigits: 0 }) + "억 달러";
   }
@@ -1673,16 +1858,19 @@
       return;
     }
     empty.style.display = "none";
-    $("custody-source").textContent = d.source || "";
+    $("custody-source").textContent = tr(d.source || "");
 
     const s = d.stats;
     const latestMonth = s.latest.month;
     const firstMonth = d.points[0].month;
+    const momSub = isEn()
+      ? `${s.change >= 0 ? "+" : "−"}${fmtUsdShort(Math.abs(s.change)).slice(1)}`
+      : `${s.change >= 0 ? "+" : ""}${fmtCustody(Math.abs(s.change)).replace("억 달러", "")}억`;
     stats.innerHTML = [
-      statTile(`최신 (${latestMonth})`, fmtCustody(s.latest.amount), fmtUsdShort(s.latest.amount)),
-      statTile("전월 대비", fmtPct(s.changePct), `${s.change >= 0 ? "+" : ""}${fmtCustody(Math.abs(s.change)).replace("억 달러", "")}억`, pctColor(s.changePct)),
-      statTile(`1년 증감 (${firstMonth}→)`, fmtPct(s.yoyPct), fmtUsdShort(Math.abs(s.yoyChange)), pctColor(s.yoyPct)),
-      statTile("최고 / 최저", `${fmtUsdShort(s.max.amount)} / ${fmtUsdShort(s.min.amount)}`, `${s.max.month} / ${s.min.month}`),
+      statTile(`${t("cu.latest")} (${latestMonth})`, fmtCustody(s.latest.amount), fmtUsdShort(s.latest.amount)),
+      statTile(t("cu.mom"), fmtPct(s.changePct), momSub, pctColor(s.changePct)),
+      statTile(`${t("cu.yoy")} (${firstMonth}→)`, fmtPct(s.yoyPct), fmtUsdShort(Math.abs(s.yoyChange)), pctColor(s.yoyPct)),
+      statTile(t("cu.maxmin"), `${fmtUsdShort(s.max.amount)} / ${fmtUsdShort(s.min.amount)}`, `${s.max.month} / ${s.min.month}`),
     ].join("");
 
     // 같은 이유로, 차트를 새로 그렸을 때만 hover 를 다시 묶는다 —
@@ -1690,13 +1878,19 @@
     if (setHtml(chart, custodyChartSvg(d.points))) wireCustodyHover(chart);
   }
 
+  // 마지막으로 받은 보관금액. 30분마다 한 번 오는 데이터라 언어를 바꿨다고
+  // 다시 받을 이유가 없다 — 들고 있던 걸로 다시 그린다.
+  let custodyData = null;
+
   async function loadCustody() {
     try {
       const r = await fetch("/api/seibro-custody");
       if (!r.ok) throw new Error(r.status);
-      renderCustody(await r.json());
+      custodyData = await r.json();
+      renderCustody(custodyData);
     } catch (e) {
       console.error("custody load failed", e);
+      custodyData = null;
       renderCustody(null);
     }
   }
@@ -1712,7 +1906,9 @@
     const dot = $("conn-dot");
     const text = $("conn-text");
     dot.className = "conn-dot" + (state === "down" ? " down" : state === "connecting" ? " connecting" : "");
-    text.textContent = state === "up" ? "실시간 연결됨" : state === "connecting" ? "연결 중…" : "연결 끊김 · 재연결 중";
+    connState = state;
+    text.textContent = state === "up" ? t("conn.up")
+      : state === "connecting" ? t("conn.connecting") : t("conn.down");
   }
 
   function connect() {
@@ -1773,12 +1969,6 @@
       body.appendChild(inner);
       panel.appendChild(body);
 
-      // 꺾쇠는 CSS 로 그린 도형이라 내용이 없다 (styles 의 .pnl-caret 참고).
-      const caret = document.createElement("span");
-      caret.className = "pnl-caret";
-      caret.setAttribute("aria-hidden", "true");
-      (head.querySelector("h4") || head).prepend(caret);
-
       if (open.includes(panel.dataset.panel)) panel.classList.add("open");
       head.setAttribute("role", "button");
       head.setAttribute("tabindex", "0");
@@ -1806,6 +1996,14 @@
     });
   }
 
+  // -- 한/영 전환 -------------------------------------------------------
+
+  $("lang-ko").addEventListener("change", () => setLang("ko"));
+  $("lang-en").addEventListener("change", () => setLang("en"));
+
   initCollapsibles();
+  // 저장된 언어를 화면에 입힌다. 여기까지 와야 아래 캐시 변수들이 다 서 있다.
+  $(lang === "en" ? "lang-en" : "lang-ko").checked = true;
+  applyLang();
   connect();
 })();
