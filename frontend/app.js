@@ -189,10 +189,11 @@
   // 그만큼 레이아웃과 이벤트 바인딩이 통째로 다시 일어난다.
   function setHtml(el, html) {
     if (!el || el.__html === html) return false;
-    const before = snapshotValues(el);
+    const live = LIVE_PANELS.has(el.id);
+    const before = live ? snapshotValues(el) : null;
     el.__html = html;
     el.innerHTML = html;
-    flashChanged(el, before);
+    if (live) flashChanged(el, before);
     return true;
   }
 
@@ -201,8 +202,21 @@
   // 초 단위로 갱신되는 화면에서 "방금 무엇이 움직였나" 를 눈으로 잡을 수
   // 있게, 값이 바뀐 칸의 바탕을 잠깐 물들였다 뺀다 (styles 의 flash-up/dn).
   //
+  // 다만 장중에 실제로 호가가 뛰는 패널만이다. 뉴스 날짜나 수급·금리표처럼
+  // 하루 한두 번 바뀌는 숫자까지 번쩍이면 "지금 움직였다" 는 신호가 흐려진다
+  // — 그래서 하이라이트는 아래 목록에 든 패널에만 건다(허용 목록).
+  //
   // 칸을 알아보는 열쇠는 "그 행의 종목코드 + 칸 순서" 다. 순위표는 매 갱신
   // 마다 행 순서가 바뀌므로 위치만으로 짚으면 엉뚱한 칸이 번쩍인다.
+
+  const LIVE_PANELS = new Set([
+    "fx-col-0", "fx-col-1", "fx-col-2",     // 주요 환율
+    "idx-col-0", "idx-col-1",               // 지수
+    "rates-list",                           // 해외 금리
+    "commodities-list",                     // 원자재
+    "movers-list", "kr-most-traded-list",   // 국내 등락 상위 · 거래대금 상위
+    "us-movers-list", "us-most-active-list", // 미국 등락 상위 · 거래량 상위
+  ]);
 
   // 다시 그리기 직전의 값을 뜬다. 갱신이 잦은 칸(.mono)만 본다.
   function snapshotValues(el) {
