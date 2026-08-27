@@ -31,6 +31,26 @@ _AC_URL = "https://ac.stock.naver.com/ac"
 _LIST_URL = "https://m.stock.naver.com/api/stocks/marketValue/{market}"
 _TYPE_TO_YAHOO_SUFFIX = {"KOSPI": ".KS", "KOSDAQ": ".KQ"}
 
+# 매 글자마다 새 연결을 여는 게 자동완성 지연의 대부분이었다 — DNS +
+# TCP + TLS 악수에 0.5초쯤 나가고, 정작 응답 자체는 0.15초다. 세션 하나를
+# 계속 쓰면 keep-alive 로 그 악수를 건너뛴다 (0.7초 → 0.16초).
+_session = requests.Session()
+_session.mount("https://", requests.adapters.HTTPAdapter(
+    pool_connections=4, pool_maxsize=8, max_retries=0,
+))
+
+
+def warm() -> None:
+    """검색창을 처음 쓰는 순간에 악수 값을 물리지 않도록, 뜨자마자 한 번
+    찔러 연결을 미리 열어둔다. 백그라운드라 기동을 늦추지 않는다."""
+    def _ping() -> None:
+        try:
+            _session.get(_AC_URL, params={"q": "0", "target": "stock"},
+                         headers=_HEADERS, timeout=6)
+        except Exception:
+            pass          # 예열 실패는 첫 검색이 조금 느려질 뿐이다
+    threading.Thread(target=_ping, daemon=True).start()
+
 # -- full-listing index (for substring matches) ------------------------
 
 _INDEX_TTL = 6 * 3600
@@ -46,7 +66,7 @@ def _build_index() -> None:
     try:
         for market, suffix in (("KOSPI", ".KS"), ("KOSDAQ", ".KQ")):
             for page in range(1, 41):  # hard cap: 40 pages x 100 per market
-                r = requests.get(
+                r = _session.get(
                     _LIST_URL.format(market=market),
                     params={"page": page, "pageSize": 100},
                     headers=_HEADERS,
@@ -99,7 +119,7 @@ def _index_snapshot() -> list[dict]:
 
 def _ac_results(query: str, limit: int) -> list[dict]:
     try:
-        r = requests.get(
+        r = _session.get(
             _AC_URL,
             params={"q": query, "target": "stock,index"},
             headers=_HEADERS,

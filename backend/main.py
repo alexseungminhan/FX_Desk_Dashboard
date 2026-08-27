@@ -343,8 +343,10 @@ async def startup() -> None:
     # 스왑포인트 연율은 현물 USD/KRW 를 분모로 쓰므로 price poll 다음에 받는다.
     await asyncio.to_thread(market.poll_krw_swap)
     # Warm the stock-name index (substring search) in the background —
-    # not worth delaying first paint for.
+    # not worth delaying first paint for. warm() 은 자동완성 쪽 TLS 연결을
+    # 미리 열어둔다 — 안 그러면 첫 검색만 악수 값(0.5초)을 뒤집어쓴다.
     naver_search.refresh_index()
+    naver_search.warm()
     asyncio.create_task(_price_loop())
     asyncio.create_task(_movers_loop())
     asyncio.create_task(_kr_most_traded_loop())
@@ -393,6 +395,15 @@ def _search_all_markets(q: str) -> list[dict] | None:
         kr = pool.submit(naver_search.search_stocks, q)
         us = pool.submit(us_search.search_stocks, q)
         return (kr.result() + us.result()) or None
+
+
+@app.get("/api/search/warm")
+async def search_warm() -> dict:
+    # 검색창에 커서가 놓이는 순간 프런트가 한 번 부른다. 네이버 자동완성으로
+    # 가는 연결은 놀고 있으면 상대가 끊어 버려서, 한동안 검색을 안 하다 치면
+    # 첫 글자만 악수 값(0.7초)을 다시 문다 — 글자가 오기 전에 미리 열어둔다.
+    naver_search.warm()
+    return {"ok": True}
 
 
 @app.get("/api/search")

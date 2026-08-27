@@ -1408,6 +1408,41 @@
   let gsItems = [];   // flattened, in display order
   let gsSeq = 0;      // discard out-of-order async results
 
+  // 종목 검색 결과를 질의별로 들고 있는다. 자동완성은 한 글자 칠 때마다
+  // 왕복이 한 번씩 나가는데, 지운 글자를 다시 치거나 IME 조합이 되돌아오면
+  // 방금 받아온 답을 또 물어보게 된다 — 그때는 그냥 캐시에서 꺼내 쓴다.
+  const gsCache = new Map();
+  const GS_CACHE_MAX = 60;
+
+  function gsCachePut(q, rows) {
+    if (gsCache.size >= GS_CACHE_MAX) gsCache.delete(gsCache.keys().next().value);
+    gsCache.set(q, rows);
+  }
+
+  // 아직 답이 안 온 사이에도 목록이 비어 보이지 않게, 이미 받아둔 짧은
+  // 질의("삼성")의 결과에서 지금 친 글자("삼성전")에 맞는 것만 걸러 미리
+  // 보여준다. 진짜 답이 도착하면 그대로 갈아 끼운다.
+  function gsProvisional(q) {
+    const needle = q.toLowerCase();
+    for (let n = q.length - 1; n >= 1; n--) {
+      const rows = gsCache.get(q.slice(0, n));
+      if (!rows) continue;
+      const hit = rows.filter((it) =>
+        it.name.toLowerCase().includes(needle) || it.symbol.toLowerCase().includes(needle));
+      if (hit.length) return hit;
+    }
+    return [];
+  }
+
+  // 캐시에는 API 가 준 원본({symbol,name,market})만 담고, 화면에 붙는 꼬리표는
+  // 그릴 때 만든다 — 안 그러면 언어를 바꾼 뒤 캐시에서 나온 줄만 옛 말로 남는다.
+  function gsStockRow(it) {
+    return {
+      type: "stock", symbol: it.symbol, name: it.name,
+      label: it.name, sub: `${it.market} \u00b7 ${it.symbol}`, tag: t("tag.stock"),
+    };
+  }
+
   // The board's own indicators (FX / indices / rates / commodities) are
   // searched client-side from the latest snapshot; stocks come from the
   // Naver autocomplete proxy (/api/search).
@@ -1467,10 +1502,6 @@
     }
     gsResults.innerHTML = html;
     gsResults.style.display = "block";
-    gsResults.querySelectorAll(".gs-row").forEach((el) => {
-      el.addEventListener("mouseenter", () => { el.style.background = "color-mix(in srgb, var(--color-text) 6%, transparent)"; });
-      el.addEventListener("mouseleave", () => { el.style.background = ""; });
-    });
   }
 
   function gsOpen(it) {
@@ -1491,30 +1522,47 @@
       || it.symbol.toLowerCase().includes(needle)
     ).slice(0, 6);
 
+    // 이미 받아본 질의면 왕복 없이 바로 그린다.
+    const cached = gsCache.get(q);
+    if (cached) { gsRender(indMatches, cached.map(gsStockRow)); return; }
+
     // 지표 결과는 로컬 매칭이라 즉시 보여주고, 종목 결과는 도착하는
     // 대로 아래에 덧붙인다 — 네이버 응답을 기다렸다 한꺼번에 그리면
-    // 체감이 느리다.
-    if (indMatches.length) gsRender(indMatches, []);
+    // 체감이 느리다. 짧은 질의의 답이 남아 있으면 그걸 걸러 임시로
+    // 깔아둔다 (없으면 지표만).
+    const provisional = gsProvisional(q);
+    if (indMatches.length || provisional.length) gsRender(indMatches, provisional.map(gsStockRow));
 
     let stockMatches = [];
+    let ok = false;
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
       if (res.ok) {
-        stockMatches = (await res.json()).map((it) => ({
-          type: "stock", symbol: it.symbol, name: it.name,
-          label: it.name, sub: `${it.market} · ${it.symbol}`, tag: t("tag.stock"),
-        }));
+        ok = true;
+        stockMatches = await res.json();
       }
     } catch (e) { console.error("stock search failed", e); }
 
+    if (ok) gsCachePut(q, stockMatches);
     if (seq !== gsSeq || gsInput.value.trim() !== q) return; // stale response
-    gsRender(indMatches, stockMatches);
+    gsRender(indMatches, stockMatches.map(gsStockRow));
   }
+
+  // 커서가 검색창에 놓이면 서버더러 네이버 쪽 연결을 미리 열어두게 한다.
+  // 첫 글자가 도착할 즈음엔 악수가 끝나 있어서 0.7초를 안 문다.
+  let gsWarmedAt = 0;
+  gsInput.addEventListener("focus", () => {
+    if (Date.now() - gsWarmedAt < 45000) return;   // 연결이 살아 있을 동안은 안 부른다
+    gsWarmedAt = Date.now();
+    fetch("/api/search/warm").catch(() => { /* 예열 실패해도 검색은 된다 */ });
+  });
 
   gsInput.addEventListener("input", () => {
     clearTimeout(gsDebounce);
     const q = gsInput.value.trim();
     if (!q) { gsHide(); return; }
+    // 캐시에 있으면 기다릴 이유가 없다 — 디바운스도 건너뛰고 바로 그린다.
+    if (gsCache.has(q)) { gsSearch(q); return; }
     gsDebounce = setTimeout(() => gsSearch(q), 150);
   });
 
