@@ -4,286 +4,631 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FX DESK. Market Board</title>
-<link rel="stylesheet" href="/static/styles.css?v=14">
+<!-- 웹폰트. 굵기는 실제로 화면에 쓰이는 것만 부른다 — 한글 두 벌
+     (Gothic A1 · IBM Plex Sans KR)은 자모 조합마다 unicode-range 를 쪼개서
+     내보내기 때문에, 굵기 하나가 60KB 안팎씩 붙는다. Gothic A1 은 제목에만
+     쓰이고 제목에 400 이 걸리는 자리가 없어 뺐다 (h5 는 500, 접힌 h4 는 600,
+     나머지는 700). preconnect 는 폰트 서버와의 첫 악수를 미리 해 둔다. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Gothic+A1:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/styles.css?v=16">
 <style>
-  .fx-row,.mv-row{display:grid;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
-  .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
-  .fx-pair{font-size:12.5px;font-weight:500;white-space:nowrap}
-  .fx-px{font-size:12.5px;text-align:right}
-  .fx-pct{font-size:12px;text-align:right;min-width:58px}
-  .mv-row{grid-template-columns:18px 1fr auto auto;gap:8px;cursor:default}
-  .mv-rank{font-size:11px;color:var(--c-label);text-align:right}
+
+  /* ── 페이지 전용 ─────────────────────────────────────────────────────
+     관점: 신문 시세면. 카드를 걷어내고 괘선과 활자 크기만으로 구분한다.
+     디스플레이 활자는 제목이 아니라 숫자다(티커 30~40px : 본문 12px). */
+
+  /* 시트 — 예전의 좁은 한 칼럼(1180px)보다는 넓지만 화면 끝까지 가지는
+     않는다. 양옆에 지반색이 드러나야 "한 장의 지면" 으로 읽힌다.
+     여백은 화면이 넓어질수록 같이 벌어지되(3vw) 위아래 한계를 둔다. */
+  .sheet {
+    max-width: 1600px;
+    margin: 0 auto;
+    background: var(--color-bg);
+    min-height: 100vh;
+    border-left: 1px solid var(--rule-thin);
+    border-right: 1px solid var(--rule-thin);
+  }
+  /* 시트가 max-width 에 닿기 전(보통 노트북 폭)에도 틈이 남게 지반 쪽에서 민다 */
+  @media (min-width: 641px) { body { padding: 0 clamp(14px, 3vw, 60px); } }
+
+  .page-pad > .blueprint { border-top: 3px solid var(--rule-heavy); }
+  .panel { padding: 13px 0 18px; background: transparent; }
+
+  /* 짝 패널은 사이를 여백이 아니라 세로 괘선으로 가른다 */
+  .row-pair > .blueprint:first-child { padding-right: 26px; }
+  .row-pair > .blueprint + .blueprint { padding-left: 26px; border-left: 1px solid var(--rule-thin); }
+
+  /* 제목 위계 3단: 머리기사(환율) 26px · 구획 17px · 색인 13px */
+  .page-pad > .blueprint > div > h4 { font-size: 26px; }
+  .panel > .panel-head > h4, .panel > h4 { line-height: 1.15; }
+  h4 .kop { font-weight: 600; }
+
+  /* 표 리듬 — 시세 행은 점선, 구획 머리만 실선.
+     값 칸(.fx-px·.fx-pct)은 폭을 못박는다. 이름 칸을 auto 로 두면 행마다
+     남는 폭이 달라져, 값이 바뀔 때 물드는 칸의 길이가 제각각이 된다. */
+  .fx-row,.mv-row{display:grid;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
+  .fx-row{grid-template-columns:minmax(0,1fr) 92px 62px;gap:9px}
+  .fx-pair{font-size:12px;font-weight:500;white-space:nowrap;letter-spacing:-.005em;
+           overflow:hidden;text-overflow:ellipsis}
+  .fx-px{font-size:13.5px;font-weight:500;text-align:right}
+  .fx-pct{font-size:11px;text-align:right}
+  .mv-row{grid-template-columns:20px 1fr 96px 74px;gap:8px;cursor:default}
+  .mv-rank{font-size:10px;color:var(--c-label);text-align:right}
+  /* 상위 3위는 순위 숫자에만 액센트를 준다 — 값 색(빨강/파랑)과 겹치지 않는 자리 */
+  .mv-row:not(.mv-head):nth-child(-n+4) .mv-rank,
+  .mt-row:not(.mv-head):nth-child(-n+4) .mv-rank{color:var(--color-accent);font-weight:700}
   /* ETF 이름은 "KODEX 미국S&P500레버리지(합성 H)" 처럼 길다 — 말줄임으로 자르면
      어느 종목인지 알 수가 없으니 끝까지 내보내고, 넘치면 목록을 가로로 민다
      (아래 .mv-list 와 감싸고 있는 .scroll-x). */
-  .mv-name{font-size:12.5px;font-weight:500;white-space:nowrap}
+  .mv-name{font-size:12px;font-weight:500;white-space:nowrap}
   .mv-px{font-size:12px;text-align:right;color:var(--c-sub)}
-  .mv-pct{font-size:12px;text-align:right;min-width:56px}
-  .mt-row{display:grid;grid-template-columns:18px 1fr auto auto auto;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .mv-pct{font-size:11.5px;text-align:right}
+  .mt-row{display:grid;grid-template-columns:20px 1fr 96px 74px 88px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
   /* 목록 폭을 가장 긴 행에 맞춘다 — 행 하나하나가 따로 격자라, 목록이
-     max-content 로 넓어져야 이름이 안 잘리고 짧은 행도 같은 폭으로 늘어난다.
-     min-width:100% 는 이름이 짧은 날 목록이 패널보다 좁아지는 걸 막는다. */
+     max-content 로 넓어져야 이름이 안 잘리고 짧은 행도 같은 폭으로 늘어난다. */
   .mv-list{width:max-content;min-width:100%}
-  .mt-vol{font-size:12px;text-align:right;min-width:64px;color:#1d1f20;font-weight:500}
+  /* 짝수 행 옅은 바탕 — 눈이 가로로 미끄러지지 않게 하는 시세면 장치 */
+  .mv-list .mv-row:nth-child(odd):not(.mv-head),
+  .mv-list .mt-row:nth-child(odd):not(.mv-head){background:color-mix(in srgb,var(--color-text) 3.5%,transparent)}
+  .mt-vol{font-size:12px;text-align:right;font-weight:600}
   /* ETF·ETN은 개별종목과 나란히 랭킹되므로 이름 옆에 종류를 표시한다 */
-  .mv-tag{font-size:9.5px;font-weight:600;letter-spacing:.04em;color:var(--c-dim);border:1px solid rgba(29,31,32,.18);padding:0 3px;margin-left:5px;vertical-align:1px}
+  .mv-tag{font-size:8.5px;font-weight:700;letter-spacing:.08em;color:var(--c-dim);border:1px solid var(--rule-thin);padding:0 3px;margin-left:5px;vertical-align:1.5px}
   /* 수급: 투자자(행) × 기간(열) 표 */
-  .flow-row{display:grid;grid-template-columns:64px repeat(4,1fr);gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .flow-row{display:grid;grid-template-columns:64px repeat(4,1fr);gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
   .flow-name{font-size:12px;font-weight:500;white-space:nowrap}
   .flow-val{font-size:12px;text-align:right}
   /* 기관 세부(금융투자·투신·연기금…)는 기관계 하위 항목이라 들여쓴다 */
-  .flow-sub .flow-name{padding-left:9px;font-weight:400;color:var(--c-sub)}
-  .flow-sub{border-bottom-color:rgba(29,31,32,.03)}
+  .flow-sub .flow-name{padding-left:10px;font-weight:400;color:var(--c-sub)}
+  .flow-sub{border-bottom-color:transparent}
   /* 베이시스 — 한 행을 다 쓰므로 지표를 세로 목록이 아니라 가로로 편다 */
-  .bs-big{display:flex;align-items:baseline;gap:10px;padding:2px 0 12px;border-bottom:1px solid rgba(29,31,32,.08)}
-  .bs-big b{font-size:26px;font-weight:500;letter-spacing:-.01em}
-  .bs-tag{font-size:10px;font-weight:600;letter-spacing:.06em;border:1px solid currentColor;padding:1px 6px}
-  .bs-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:12px 26px;padding-top:12px}
-  .bs-stat{display:flex;flex-direction:column;gap:2px}
-  .bs-stat span{font-size:11px;color:var(--c-dim);letter-spacing:.02em}
-  .bs-stat b{font-size:14.5px;font-weight:500}
+  .bs-big{display:flex;align-items:baseline;gap:10px;padding:2px 0 10px;border-bottom:1px solid var(--rule-thin)}
+  .bs-big b{font-size:36px;font-weight:400;letter-spacing:-.035em}
+  .bs-tag{font-size:9.5px;font-weight:700;letter-spacing:.1em;border:1px solid currentColor;padding:1px 5px}
+  .bs-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px 26px;padding-top:10px}
+  .bs-stat{display:flex;flex-direction:column;gap:1px}
+  .bs-stat span{font-size:9.5px;color:var(--c-label);letter-spacing:.14em;text-transform:uppercase}
+  .bs-stat b{font-size:15px;font-weight:500}
   /* 채권 수급은 "자산운용(공모)" 처럼 라벨이 길어 첫 열을 넓게 잡는다 */
   .bflow-row{grid-template-columns:110px repeat(4,1fr)}
-  /* 좁은 화면에서 넓은 표·차트를 찌그러뜨리는 대신 가로로 밀어서 본다.
-     안쪽 min-width 는 "이보다 좁아지면 못 읽는다" 는 하한이고, 데스크톱
-     패널 폭(약 1,140px)보다 작아서 넓은 화면에서는 걸리지 않는다. */
   /* grid·flex 자식은 기본이 min-width:auto 라 내용이 넓으면 칸 자체가
      늘어난다. 이걸 안 풀면 아래 .scroll-x 가 스크롤을 못 하고 패널이
      통째로 넓어져 페이지가 가로로 밀린다. */
   .blueprint,.scroll-x{min-width:0}
   .scroll-x{overflow-x:auto;overscroll-behavior-x:contain}
-  /* 패널 껍데기 — 15곳에 같은 인라인 스타일을 붙이던 걸 한 클래스로 모은다 */
-  .panel{padding:16px 18px;background:var(--color-bg)}
-  /* 표 머리 — 여덟 종류의 표가 저마다 되풀이하던 선언을 하나로 모은다.
-     수급·커브 표는 칸을 오른쪽 정렬해야 해서 글자 스타일을 span 에 건다. */
-  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,.flow-head,.cv-head{
-    border-bottom:1px solid rgba(29,31,32,.14);padding-bottom:6px}
+  /* 표 머리 — 여덟 종류의 표가 저마다 되풀이하던 선언을 하나로 모은다. */
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,.flow-head,.cv-head,.mv-head{
+    border-bottom:1px solid var(--rule-mid);padding-bottom:5px}
   .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,
-  .flow-head span,.cv-head span{font-size:10.5px;color:var(--c-label);letter-spacing:.06em}
+  .flow-head span,.cv-head span,.mv-head span{font-size:9.5px;color:var(--c-label);letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+  /* 머리행은 시세 행이 아니다 — 순위 강조(상위 3위)와 짝수 줄 바탕에서 뺀다 */
+  .mv-head{border-bottom-style:solid !important;background:none !important}
+  .mv-head .mv-rank{color:var(--c-label) !important;font-weight:600 !important}
   .flow-head span,.cv-head span{text-align:right}
   .flow-head span:first-child,.cv-head span:first-child{text-align:left}
 
   /* 가로 스크롤이 있다는 신호.
      안쪽 두 겹(background-attachment:local)은 내용에 붙어 같이 밀려나고,
-     바깥 두 겹(scroll)은 칸에 고정된다. 스크롤할 여지가 없으면 안쪽 겹이
-     바깥 그림자를 덮어 아무것도 안 보이고, 밀 수 있을 때만 그 방향 끝에
+     바깥 두 겹(scroll)은 칸에 고정된다. 밀 수 있을 때만 그 방향 끝에
      그림자가 드러난다 — JS 없이 넘칠 때만 뜬다. */
-  .scroll-x, #ticker-strip{
+  .scroll-x{
     background-image:
       linear-gradient(to right,  var(--scroll-shadow-bg, var(--color-bg)) 40%, transparent),
       linear-gradient(to left,   var(--scroll-shadow-bg, var(--color-bg)) 40%, transparent),
-      linear-gradient(to right,  rgba(29,31,32,.20), transparent),
-      linear-gradient(to left,   rgba(29,31,32,.20), transparent);
+      linear-gradient(to right,  var(--scroll-ink), transparent),
+      linear-gradient(to left,   var(--scroll-ink), transparent);
     background-position:left center,right center,left center,right center;
     background-repeat:no-repeat;
-    background-size:32px 100%,32px 100%,11px 100%,11px 100%;
+    background-size:32px 100%,32px 100%,10px 100%,10px 100%;
     background-attachment:local,local,scroll,scroll;
   }
-  #ticker-strip{--scroll-shadow-bg:var(--color-surface)}
+  /* ── 티커 띠 = 이 화면의 머리기사 ───────────────────────────────────
+     칸은 전부 같은 크기로 두고, 띠 전체를 천천히 왼쪽으로 흘려보낸다.
+     안쪽 트랙(#ticker-track)에 같은 칸을 한 벌 더 복제해 붙여서, 첫 벌이
+     다 지나간 순간 두 번째 벌이 정확히 같은 자리에 있게 만든다 — 그래서
+     -50% 에서 0 으로 되감아도 끊긴 티가 나지 않는다. */
+  #ticker-strip{overflow:hidden}
+  #ticker-track{display:flex;width:max-content;will-change:transform}
+  .tk-cell{
+    flex:0 0 var(--ticker-cell, 190px);
+    border-right:1px solid var(--rule-hair);
+  }
+  /* 맨 끝 칸의 세로선은 지운다 — 되감기는 자리라 첫 칸 왼쪽과 겹쳐 두 줄이 된다 */
+  #ticker-track > .tk-cell:last-child{border-right:0}
+  /* 손을 올리면 멈춘다 — 지나가는 값을 눈으로 좇다 놓치지 않게 */
+  #ticker-strip:hover #ticker-track{animation-play-state:paused}
+  @keyframes ticker-slide{from{transform:translate3d(0,0,0)}to{transform:translate3d(-50%,0,0)}}
+  #ticker-track.rolling{animation:ticker-slide var(--ticker-duration, 90s) linear infinite}
+  /* 칸이 화면을 다 못 채울 만큼 종목이 적으면 굳이 흘리지 않는다 */
+  #ticker-track.static{animation:none}
   /* 탭이 많은 세그먼트(채권종류 9개·커브 7개)도 같은 이유로 넘친다 */
   .seg-nowrap{overflow-x:auto;max-width:100%}
   #flow-table,#bflow-table{min-width:660px}
-  /* 막대 차트는 표보다 넉넉히 잡는다 — 11개 주체 라벨과 값이 겹치지 않고
-     읽히는 하한이 이 정도다. 좁은 화면에서는 그만큼 옆으로 밀어서 본다. */
   #flow-chart,#bflow-chart{min-width:1000px}
-  /* 보관금액은 24개월치 월 라벨이 붙어 오히려 더 넓어야 안 겹친다 */
   #custody-chart{min-width:1040px}
   #quotes-list{min-width:700px}
   #curve-table{min-width:900px}
   #curve-chart{min-width:860px}
   #strate-table{min-width:780px}
-  /* 넓은 화면에서는 패널을 꽉 채우고, 좁아지면 이 하한부터 가로로 민다 */
   #drain-table{min-width:680px}
   #fxbond-list{min-width:840px}
-  /* 탭이 좁은 패널에서 글자 단위로 접히지 않게 — 줄바꿈 대신 한 줄 유지 */
   .seg-nowrap .seg-opt span{white-space:nowrap}
+  /* 탭은 좁은 칸에서도 낱글자로 접히지 않는다 */
+  .seg-opt{white-space:nowrap}
+  .panel-head .seg{flex:none}
+  .panel-head > h4{min-width:0}
+  /* 환율·지수 지역 칼럼 — 여백이 아니라 세로 괘선으로 가른다 */
+  #fx-regions > div, #idx-main > div{padding:0 30px}
+  #fx-regions > div:first-child, #idx-main > div:first-child{padding-left:0}
+  #fx-regions > div:last-child, #idx-main > div:last-child{padding-right:0}
+  #fx-regions > div + div, #idx-main > div + div{border-left:1px solid var(--rule-thin)}
   /* 채권 커브: 종류(행) × 만기(열). 국고채 행만 굵게 세워 기준선을 만든다 */
-  .cv-row{display:grid;grid-template-columns:104px repeat(8,1fr);gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05)}
+  .cv-row{display:grid;grid-template-columns:104px repeat(8,1fr);gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
   .cv-name{font-size:12px;white-space:nowrap}
-  .cv-base .cv-name{font-weight:600}
+  .cv-base .cv-name{font-weight:700}
+  .cv-base{border-bottom:1px solid var(--rule-mid)}
   .cv-val{font-size:12px;text-align:right}
   /* 국고채 대비 스프레드는 값 아래 작게 — 레벨과 폭을 한 칸에서 같이 읽는다 */
   .cv-val small{display:block;font-size:9.5px;color:var(--c-label);font-weight:400}
   /* 지표종목 최종호가: 종목 | 잔존 | 수익률 | 전일대비 | 연중레인지 */
-  .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
   .q-num{text-align:right}
   /* 원화 스왑: 만기 | SMBS Bid/Offer/Mid/연율 | KMB Bid/Offer/Mid/연율.
      칸 사이 gap 을 없애고 셀 안쪽 padding 으로 벌린다 — 중개사 묶음의
      바탕색이 끊기지 않고 한 덩어리로 보여야 구분이 된다. */
-  .sw-row{display:grid;grid-template-columns:56px repeat(8,1fr);align-items:center;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
-  .sw-row > span{padding:5px 7px}
+  .sw-row{display:grid;grid-template-columns:56px repeat(8,1fr);align-items:center;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .sw-row > span{padding:3px 7px}
   .sw-row > span:first-child{padding-left:0}
-  /* 중개사 구획: 바탕색으로 묶고 양 끝에 세로 테두리를 세운다 */
-  .sw-s{background:rgba(89,128,166,.09)}
-  .sw-k{background:rgba(166,123,89,.10)}
-  .sw-s.sw-edge-l{border-left:1px solid rgba(89,128,166,.45)}
-  .sw-s.sw-edge-r{border-right:1px solid rgba(89,128,166,.45)}
-  .sw-k.sw-edge-l{border-left:1px solid rgba(166,123,89,.5)}
-  .sw-k.sw-edge-r{border-right:1px solid rgba(166,123,89,.5)}
+  /* 중개사 구획: 바탕 대신 세로 괘선으로만 묶는다 — 색은 데이터에만 쓴다 */
+  .sw-s{background:color-mix(in srgb,var(--color-text) 3.5%,transparent)}
+  .sw-k{background:transparent}
+  .sw-s.sw-edge-l{border-left:1px solid var(--rule-thin)}
+  .sw-s.sw-edge-r{border-right:1px solid var(--rule-thin)}
+  .sw-k.sw-edge-l{border-left:1px solid var(--rule-thin)}
+  .sw-k.sw-edge-r{border-right:1px solid var(--rule-thin)}
   /* 중개사 이름 띠 — 어느 묶음이 누구 고시인지 표 위에서 못박는다 */
   .sw-grouphead{border-bottom:0}
   .sw-grouphead > span:nth-child(2){grid-column:2/span 4}
   .sw-grouphead > span:nth-child(3){grid-column:6/span 4}
-  .sw-grp{text-align:center;font-size:10px;letter-spacing:.08em;font-weight:600;padding:4px 7px !important}
-  .sw-grp.sw-s{color:#4a6d92;border-top:1px solid rgba(89,128,166,.45)}
-  .sw-grp.sw-k{color:#8a6540;border-top:1px solid rgba(166,123,89,.5)}
-  .ic-row,.bi-row{display:grid;grid-template-columns:70px repeat(3,1fr);gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .sw-grp{text-align:left;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;padding:3px 7px !important}
+  .sw-grp.sw-s{color:var(--c-sub);border-top:1px solid var(--rule-mid)}
+  .sw-grp.sw-k{color:var(--c-sub);border-top:1px solid var(--rule-mid)}
+  .ic-row,.bi-row{display:grid;grid-template-columns:70px repeat(3,1fr);gap:10px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
   .sw-num{text-align:right}
   #swap-table{min-width:700px}
   #irscrs-table,#bondirs-table{min-width:480px}
   /* FX-implied 원화금리·CCS 베이시스:
-     만기 | 일수 | swap rate | USD | par yield | IRS | basis.
-     basis 만 부호가 뜻을 가지므로 왼쪽에 옅은 칸막이를 세워 레벨 칸들과
+     basis 만 부호가 뜻을 가지므로 왼쪽에 칸막이를 세워 레벨 칸들과
      갈라 놓는다 — 눈이 "여기부터가 결론"으로 읽게 한다. */
-  .fi-row{display:grid;grid-template-columns:52px 44px repeat(5,1fr);align-items:center;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
-  .fi-row > span{padding:5px 6px}
+  .fi-row{display:grid;grid-template-columns:52px 44px repeat(5,1fr);align-items:center;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .fi-row > span{padding:3px 6px}
   .fi-row > span:first-child{padding-left:0}
-  .fi-row > span:last-child{border-left:1px solid rgba(29,31,32,.12)}
-  .fi-head{font-size:10px;letter-spacing:.06em;color:var(--c-label);font-weight:600}
+  .fi-row > span:last-child{border-left:1px solid var(--rule-mid)}
+  .fi-head{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--c-label);font-weight:600}
   /* 보간으로 만든 행은 값 자체가 추정이라 표 안에서 티가 나야 한다 */
-  .fi-interp{background:rgba(140,120,80,.07)}
-  .fi-flag{display:inline-block;font-size:8.5px;letter-spacing:.06em;font-weight:600;
-           color:#8a6540;border:1px solid rgba(166,123,89,.5);border-radius:2px;
-           padding:0 3px;margin-left:4px;vertical-align:1px}
+  .fi-interp{background:var(--color-accent-100)}
+  .fi-flag{display:inline-block;font-size:8.5px;letter-spacing:.08em;font-weight:700;
+           color:var(--color-accent-700);border:1px solid var(--color-accent-400);border-radius:0;
+           padding:0 3px;margin-left:4px;vertical-align:1.5px}
   /* 6M 보간 방식별 값 — 하나를 고르는 게 아니라 폭을 보여주는 줄 */
-  .fi-variants{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:10.5px;
-               color:var(--c-label);padding:7px 0 0}
-  .fi-warn{font-size:10.5px;line-height:1.55;color:var(--c-label);padding-top:7px}
+  .fi-variants{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:10.5px;
+               color:var(--c-label);padding:6px 0 0}
+  .fi-warn{font-size:10.5px;line-height:1.5;color:var(--c-label);padding-top:6px}
   .fi-warn div{padding-left:11px;text-indent:-11px}
-  .fi-warn div::before{content:"▸ ";color:#8a6540}
+  .fi-warn div::before{content:"▸ ";color:var(--color-accent)}
   #fximplied-table{min-width:660px}
   /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
-  .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
+  .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
   .st-num{text-align:right}
   /* 외환보유액 단기 유출예정액(IMF 표 II): 구분 | 잔존만기 4구간.
-     IMF 템플릿 라벨은 "1. 외화 대출·증권·예치금" 처럼 길어 첫 열을 넉넉히 잡는다.
      칸 사이 gap 을 쓰지 않고 셀 안쪽 padding 으로 벌린다 — 강조 행의 바탕색이
      칸 사이에서 끊기지 않고 한 줄로 이어져야 한다. */
   .rd-row{display:grid;grid-template-columns:262px repeat(4,1fr);align-items:center;
-          border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
-  .rd-row > span{padding:5px 8px}
+          border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .rd-row > span{padding:3px 8px}
   .rd-num{text-align:right}
-  /* 라벨 칸도 표의 일부다 — 예전에는 왼쪽에 sticky 로 세워 뒀는데, 첫 열만
-     제자리에 붙어 있고 나머지만 밀리는 게 스크롤이 고장 난 것처럼 보였다.
-     이제는 표 전체가 한 덩어리로 같이 밀린다.
-     한글은 기본값이 아무 데서나 끊기므로 띄어쓰기에서만 접히게 한다. */
+  /* 한글은 기본값이 아무 데서나 끊기므로 띄어쓰기에서만 접히게 한다. */
   .rd-name{padding-left:0 !important;word-break:keep-all;line-height:1.4}
-  .rd-top .rd-name{font-weight:600}
+  .rd-top .rd-name{font-weight:700}
   .rd-sub .rd-name{text-indent:11px;font-weight:400;color:var(--c-sub)}
-  .rd-sub{border-bottom-color:rgba(29,31,32,.03)}
+  .rd-sub{border-bottom-color:transparent}
   /* 2-(b) 당국 선물환 매수 잔액 — 이 표에서 데스크가 실제로 보는 한 줄.
-     보드의 나머지 강조는 죄다 파랑 계열(accent)이라 형광펜처럼 노랑으로 뺀다. */
-  .rd-hi{background:rgba(245,205,50,.45);border-bottom-color:rgba(201,154,30,.45)}
-  .rd-hi .rd-name{font-weight:600;color:var(--color-text);box-shadow:inset 3px 0 0 #c99a1e}
-  /* 외화표시채 발행.
-     행마다 grid 가 따로라, 폭이 내용에 따라 정해지는 칸(auto)이 하나라도
-     있으면 남는 폭이 행마다 달라져 fr 칸들이 제각각 어긋난다 — 발행액도
-     고정폭으로 못박아 모든 행이 같은 자리에서 끊기게 한다. */
-  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 46px 108px 62px 62px;gap:10px;align-items:center;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.05);font-size:12px}
-  /* fr 칸은 기본 최소폭이 내용 크기라, 긴 종목명이 들어오면 칸을 밀어낸다.
-     min-width:0 으로 풀어야 말줄임(…)이 먹고 열이 안 밀린다. */
+     형광펜 대신 액센트(황토) 왼쪽 막대 + 옅은 바탕. 데이터 색과 안 겹친다. */
+  .rd-hi{background:var(--color-neutral-200);border-bottom:1px solid var(--rule-mid)}
+  .rd-hi .rd-name{font-weight:700;color:var(--color-text);box-shadow:inset 3px 0 0 var(--color-accent)}
+  /* 외화표시채 발행. 행마다 grid 가 따로라 폭을 전부 못박는다 */
+  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 46px 108px 62px 62px;gap:10px;align-items:center;padding:4px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
   .fb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
   .fb-row > span{min-width:0}
   .fb-cur{white-space:nowrap;overflow:hidden}
   .fb-num{text-align:right;white-space:nowrap;overflow:hidden}
-  /* 뉴스 목록(환율 주요 뉴스·주요 뉴스) — 시각과 제목의 2열 격자.
-     행마다 격자를 따로 만들면 "08/17 14:05" 같은 긴 시각이 섞이는 순간 행마다
-     제목이 시작하는 자리가 달라지고, 좁은 화면에서는 시각 칸이 눌려 제목 위로
-     글자가 겹쳐 나온다. 목록 전체를 하나의 격자로 잡아 첫 열 폭을 가장 긴
-     시각에 맞추면 모든 제목이 같은 자리에서 시작한다. */
-  .nws-list{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:11px}
-  .nws-list > *{border-bottom:1px solid rgba(29,31,32,.06)}
-  .nws-when{font-size:10.5px;color:var(--c-label);white-space:nowrap;padding:9px 0 7px}
-  .nws-body{font-size:12.5px;line-height:1.4;text-wrap:pretty;padding:7px 0;min-width:0}
+  /* 뉴스 목록 — 목록 전체를 하나의 격자로 잡아 첫 열 폭을 가장 긴 시각에
+     맞추면 모든 제목이 같은 자리에서 시작한다. */
+  .nws-list{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:13px}
+  .nws-list > *{border-bottom:1px dotted var(--rule-hair)}
+  .nws-when{font-size:10px;color:var(--c-label);white-space:nowrap;padding:7px 0 6px}
+  .nws-body{font-size:12.5px;line-height:1.45;text-wrap:pretty;word-break:keep-all;padding:6px 0;min-width:0}
   /* 키워드 뉴스 */
-  .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:11px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.06);align-items:baseline}
-  .kwn-when{font-size:10.5px;color:var(--c-label);white-space:nowrap}
-  .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
-  .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 8px;border:1px solid var(--color-accent);color:var(--color-accent);background:rgba(89,128,166,.08);letter-spacing:.02em}
+  .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:13px;padding:5px 0;border-bottom:1px dotted var(--rule-hair);align-items:baseline}
+  .kwn-when{font-size:10px;color:var(--c-label);white-space:nowrap}
+  .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:9px}
+  .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:2px 7px;border:1px solid var(--color-accent);color:var(--color-accent-700);background:transparent;letter-spacing:.02em}
   .kw-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0}
-  .kw-chip button:hover{color:#c0392b}
-  .up{color:var(--color-accent)}
-  .dn{color:#c0392b}
+  .kw-chip button:hover{color:var(--c-up)}
+  /* 상승 = 빨강, 하락 = 파랑 */
+  .up{color:var(--c-up)}
+  .dn{color:var(--c-down)}
 
   /* — 접히는 패널 —
      주식 수급 아래로는 늘 띄워 놓고 보는 시세가 아니라 필요할 때 펴 보는
-     자료다. 전부 펴 두면 페이지가 9,500px 이 넘어서 위쪽 환율을 다시 보려면
-     한참 거슬러 올라와야 했다. 기본은 접힘이고, 편 패널은 localStorage 에
-     남아 다음 접속에도 그대로다 (app.js 의 initCollapsibles). */
+     자료다. 기본은 접힘이고, 편 패널은 localStorage 에 남는다.
+     접힌 열 개는 위계의 맨 아래 단 — 시세면 뒤쪽 "색인"처럼 한 줄씩 쌓는다. */
   .pnl-head{cursor:pointer;user-select:none}
-  /* 헤더 안에 기간 탭·검색창이 들어앉은 패널이 있다 — 거기까지 손가락
-     커서가 되면 접기 버튼처럼 보인다 (클릭 자체는 JS 에서 걸러 낸다). */
   .pnl-head .seg,.pnl-head input{cursor:auto}
   .pnl-head .seg-opt{cursor:pointer}
-  /* 제목 앞 꺾쇠 — 접히면 오른쪽, 펴지면 아래를 가리킨다.
-     글자(▾)가 아니라 정사각형의 두 변을 45° 돌려 그린다. 글리프로 하면
-     폰트마다 베이스라인 위치가 달라 제목 옆에서 아래로 처지는데, 도형은
-     vertical-align:middle 이 글자 한가운데에 정확히 맞춰 준다. */
-  .pnl-caret{display:inline-block;width:10px;height:10px;margin-right:9px;
-             border-right:2.5px solid var(--c-dim);border-bottom:2.5px solid var(--c-dim);
+  /* 제목 앞 꺾쇠 — 정사각형의 두 변을 45° 돌려 그린다 */
+  .pnl-caret{display:inline-block;width:7px;height:7px;margin-right:9px;
+             border-right:2px solid var(--color-accent);border-bottom:2px solid var(--color-accent);
              vertical-align:middle;transform:translateY(-2px) rotate(-45deg);
-             transition:transform .2s ease,border-color .15s ease}
+             transition:transform .18s ease,border-color .15s ease}
   .panel.open .pnl-caret{transform:translateY(-3px) rotate(45deg)}
-  .pnl-head:hover .pnl-caret{border-color:var(--color-accent)}
-  /* 접혀 있을 때 기간·종류 탭은 눌러 봐야 보이는 게 없으니 감춘다.
-     기준일 표시는 남긴다 — 펴지 않고도 언제 것인지는 보여야 한다. */
+  .pnl-head:hover .pnl-caret{border-color:var(--color-text)}
   .collapsible:not(.open) .pnl-head .seg{display:none}
-  /* 0fr → 1fr 로 늘리면 내용 높이를 미리 몰라도 애니메이션이 된다
-     (height:auto 는 transition 이 안 걸린다). 안쪽 겹의 overflow:hidden 이
-     접히는 동안 내용을 잘라 준다 — 이게 없으면 삐져나온 채로 줄어든다. */
-  .panel-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease}
+  /* 접힌 패널: 색인 한 줄. 위아래 음수 마진으로 붙여 표처럼 쌓는다 */
+  .collapsible:not(.open){border-top:1px dotted var(--rule-thin);padding:0}
+  .collapsible:not(.open) > .pnl-head{padding:6px 0}
+  .collapsible:not(.open) h4{font-size:13px;font-weight:600;line-height:1.35}
+  .collapsible:not(.open) .kop{font-size:10px !important}
+  .collapsible:not(.open):hover{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  /* 펴진 패널은 색인에서 빠져나와 구획 대접을 받는다 */
+  .collapsible.open{border-top:1px solid var(--rule-mid);margin-top:20px}
+  /* 0fr → 1fr 로 늘리면 내용 높이를 미리 몰라도 애니메이션이 된다 */
+  .panel-body{display:grid;grid-template-rows:0fr;
+              transition:grid-template-rows .5s cubic-bezier(.16,1,.3,1)}
   .panel.open > .panel-body{grid-template-rows:1fr}
-  .panel-body > div{overflow:hidden;min-height:0}
-  /* 접혔을 때 제목 아래 여백이 남으면 빈 줄이 하나 붙은 것처럼 보인다.
-     헤더 여백이 인라인 스타일이라 !important 로 눌러야 먹는다. */
+  .panel-body > div{overflow:hidden;min-height:0;
+                    opacity:0;transition:opacity .34s ease .06s}
+  .panel.open > .panel-body > div{opacity:1}
+  /* 접혔을 때 제목 아래 여백이 남으면 빈 줄이 하나 붙은 것처럼 보인다. */
   .collapsible:not(.open) > .pnl-head{margin-bottom:0 !important}
 
   /* — 모바일 대응: 인라인 그리드를 좁은 화면에서 1단으로 접는다 — */
   @media (max-width: 900px){
     .row-pair{grid-template-columns:1fr !important}
+    /* 1단으로 접히면 세로 괘선은 뜻이 없다 — 가로 괘선으로 바꿔 준다 */
+    .row-pair > .blueprint:first-child{padding-right:0}
+    .row-pair > .blueprint + .blueprint{padding-left:0;border-left:0;border-top:1px solid var(--rule-mid)}
     #fx-regions{grid-template-columns:1fr 1fr !important}
+    #fx-regions > div:nth-child(3){padding-left:0;border-left:0;border-top:1px dotted var(--rule-thin);padding-top:8px;margin-top:8px}
   }
   @media (max-width: 640px){
-    .page-pad{padding:14px 12px 24px !important;gap:16px !important}
-    .page-pad > .blueprint,.row-pair > .blueprint{padding:14px 12px !important}
-    .nav{flex-wrap:wrap;padding:10px 14px !important;gap:6px 14px !important}
+    .page-pad{padding:0 13px 24px !important;gap:0 !important}
+    .page-pad > .blueprint,.row-pair > .blueprint{padding:13px 0 16px !important}
+    .nav{flex-wrap:wrap;padding:10px 13px !important;gap:6px 13px !important}
     #fx-regions,#idx-main{grid-template-columns:1fr !important}
+    /* 1단에서는 칼럼 괘선을 가로선으로 돌린다 */
+    #fx-regions > div,#idx-main > div{padding:0 !important}
+    #fx-regions > div + div,#idx-main > div + div{border-left:0;border-top:1px dotted var(--rule-thin);padding-top:8px !important;margin-top:8px}
+    .page-pad > .blueprint > div > h4{font-size:21px}
     .panel-head{flex-wrap:wrap;gap:6px}
-    /* 제목 옆에 붙어 있던 기준일·출처·건수는 좁은 화면에서 제목과 자리를
-       다투다 서로 파고든다 (제목이 두세 줄로 접히는데 오른쪽 글씨는 첫
-       줄 기준으로 붙는다). 제목이 한 줄을 통째로 쓰게 해서 아래로 내린다. */
+    /* 제목 옆 기준일·출처·건수는 좁은 화면에서 제목과 자리를 다툰다.
+       제목이 한 줄을 통째로 쓰게 해서 아래로 내린다. */
     .panel-head > h4{flex:1 1 100%}
-    /* 넓은 표·차트는 글자를 줄여 욱여넣지 않는다 — .scroll-x 가 가로
-       스크롤을 맡고, 안쪽은 min-width 로 읽을 수 있는 크기를 지킨다. */
     #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
-    /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을
-       자동 확대해서, 검색 후 열리는 팝업이 줌인된 채로 보인다. */
+    /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을 확대한다 */
     #global-search,#news-kw-input{font-size:16px !important}
-    /* 탭 줄은 좁은 화면에서 감춰진 채 옆으로 밀리느니 접혀서 다 보이는
-       편이 낫다 — 채권종류 9개·커브 7개는 넘겨봐야 있는 줄도 모른다.
-       인라인 height 로 한 줄 높이가 박혀 있어 같이 풀어준다.
-
-       단, 한 줄로 붙어 있을 때 쓰던 "사이에만 세로선"은 줄이 바뀌는 순간
-       위아래 경계가 없어져 아래윗줄 탭이 한 덩어리로 붙어 보인다. 접힐
-       때는 탭마다 테두리를 두르고 사이를 띄워, 낱개로 읽히게 한다. */
+    /* 탭 줄은 감춰진 채 옆으로 밀리느니 접혀서 다 보이는 편이 낫다 */
     .seg-nowrap{flex-wrap:wrap;overflow-x:visible;height:auto !important;border:0;gap:5px}
-    .seg-nowrap .seg-opt{border:1px solid var(--color-divider)}
-    /* 한글은 기본값이 아무 데서나 끊기라서 "대표수/익률" 처럼 낱말 중간에
-       줄이 바뀐다. keep-all 이면 띄어쓰기에서만 접힌다. */
+    .seg-nowrap .seg-opt{border:1px solid var(--rule-thin)}
+    /* 한글은 기본값이 아무 데서나 끊긴다 — keep-all 이면 띄어쓰기에서만 접힌다 */
     h4,h5,.kop{word-break:keep-all;overflow-wrap:break-word}
+    /* 제목에 인라인으로 박힌 nowrap(키워드 뉴스)은 좁은 화면에서 페이지를
+       통째로 밀어낸다 — 접히게 풀어 준다. */
+    .panel h4{white-space:normal !important}
   }
+
+  /* ── 움직임 ──────────────────────────────────────────────────────────
+     frontend/motion.js 가 Motion 으로 실제 애니메이션을 건다. 여기서는
+     "아직 나타나기 전" 상태와, 자바스크립트가 못 떴을 때의 안전장치만
+     둔다. .js-motion 은 head 인라인 스크립트가 붙이고, motion.js 가 뜨면
+     .motion-ready 가 따라 붙는다 — 둘 다 있을 때만 감춘다. 모듈이 3초 안에
+     안 뜨면 인라인 스크립트가 .js-motion 을 떼어 화면을 그냥 보여 준다. */
+  /* 움직임 자체는 CSS 전환이 맡고, 자바스크립트는 .revealed 를 붙이는
+     방아쇠만 당긴다. requestAnimationFrame 으로 프레임마다 값을 찍는 방식은
+     탭이 백그라운드로 가면 그대로 얼어붙어 opacity:0 에 갇힌다 — 마케팅
+     페이지면 몰라도 시세판이 그러면 고장으로 보인다. CSS 는 도착 상태가
+     선언으로 박혀 있어서, 전환이 안 돌더라도 결국 보이는 상태로 끝난다. */
+  /* 감추는 쪽에는 전환을 걸지 않는다. 걸어 두면 "보임 → 감춤" 도 0.55초에
+     걸쳐 일어나는데, 탭이 백그라운드면 그 전환이 한 프레임도 안 돌아서
+     시작값(보임)에 멈춰 있다가 탭을 켜는 순간 뒤늦게 사라진다.
+     감춤은 즉시, 드러남만 전환이다. */
+  html.js-motion .reveal{opacity:0;transform:translateY(18px)}
+  html.js-motion .reveal > :not(.corner):not(.panel-body){opacity:0;transform:translateY(10px)}
+  html.js-motion .reveal.revealed{
+    opacity:1;transform:none;
+    transition:opacity .55s cubic-bezier(.16,1,.3,1),transform .55s cubic-bezier(.16,1,.3,1);
+  }
+  /* 자식은 한 단씩 밀어 계단처럼 들어온다 (--i 는 motion.js 가 한 번 심는다) */
+  html.js-motion .reveal.revealed > :not(.corner):not(.panel-body){
+    opacity:1;transform:none;
+    transition:opacity .45s cubic-bezier(.16,1,.3,1) calc(.08s + var(--i,0) * .05s),
+               transform .45s cubic-bezier(.16,1,.3,1) calc(.08s + var(--i,0) * .05s);
+  }
+
+  /* 단어 마스크 — 넘치는 부분을 감춘 칸 안에서 단어가 올라온다 */
+  .mask-line{display:inline-block;max-width:100%;overflow:hidden;vertical-align:bottom;padding-bottom:.06em}
+  .mask-word{display:inline-block;will-change:transform;
+    transition:transform .6s cubic-bezier(.16,1,.3,1) calc(var(--i,0) * .035s)}
+  html.js-motion .mask-reveal[data-masked]:not(.revealed) .mask-word{transform:translateY(105%)}
+
+  /* 값이 바뀐 칸을 잠깐 물들였다 뺀다 — 초 단위로 갱신되는 화면에서
+     "방금 뭐가 움직였나" 를 눈으로 잡아내는 유일한 단서다. 글자색은
+     그대로 두고 바탕만 스친다 (색은 데이터 몫이라 상승 빨강/하락 파랑). */
+  /* 칠을 글자보다 조금 넓히는 데 padding 을 쓰면 오른쪽 끝 칸이 문서 폭을
+     밀어내 모바일에서 가로 스크롤이 생긴다. box-shadow 는 자리를 차지하지
+     않으므로 레이아웃도 scrollWidth 도 건드리지 않는다. */
+  /* 들어올 때는 짧게(8% ≈ 0.3초), 빠질 때는 아주 길게. 확 켜졌다 꺼지면
+     여러 칸이 동시에 깜빡일 때 눈이 따라가지 못하고 정신만 사납다. */
+  @keyframes flash-up{
+    0%{background-color:transparent;box-shadow:0 0 0 3px transparent}
+    8%{background-color:color-mix(in srgb,var(--c-up) 26%,transparent);
+       box-shadow:0 0 0 3px color-mix(in srgb,var(--c-up) 26%,transparent)}
+    100%{background-color:transparent;box-shadow:0 0 0 3px transparent}
+  }
+  @keyframes flash-dn{
+    0%{background-color:transparent;box-shadow:0 0 0 3px transparent}
+    8%{background-color:color-mix(in srgb,var(--c-down) 26%,transparent);
+       box-shadow:0 0 0 3px color-mix(in srgb,var(--c-down) 26%,transparent)}
+    100%{background-color:transparent;box-shadow:0 0 0 3px transparent}
+  }
+  .flash-up{animation:flash-up 4s cubic-bezier(.22,.55,.3,1)}
+  .flash-dn{animation:flash-dn 4s cubic-bezier(.22,.55,.3,1)}
+
+  @media (prefers-reduced-motion: reduce){
+    html.js-motion .reveal,html.js-motion .reveal > :not(.corner):not(.panel-body){
+      opacity:1 !important;transform:none !important;transition:none !important}
+    .panel-body{transition:none !important}
+    .panel-body > div{transition:none !important}
+    html.js-motion .mask-word{transform:none !important;transition:none !important}
+    #ticker-track{animation:none !important}
+    .flash-up,.flash-dn{animation-duration:.01ms}
+  }
+
+  /* ── 다크 판본 보정 ───────────────────────────────────────────────────
+     지반을 뒤집으면 값이 그대로여도 시각적으로 어긋나는 자리들만 손본다.
+     :root[data-theme="dark"] 를 앞에 달았으므로 밝은 판본은 건드리지 않는다. */
+  /* 잉크 채움 탭·페이지 번호: 밝은 판을 그대로 뒤집으면 흰 덩어리가 너무 튄다.
+     지문 색 대신 한 단 낮춰 눈부심을 줄인다. */
+  :root[data-theme="dark"] .seg-opt:has(input:checked){background:var(--color-accent-800);color:var(--color-bg)}
+  /* 짝수 행 바탕 — 다크에서 흰색 3.5%는 안 보인다. 검정 쪽으로 눌러 홈을 만든다. */
+  :root[data-theme="dark"] .mv-list .mv-row:nth-child(odd):not(.mv-head),
+  :root[data-theme="dark"] .mv-list .mt-row:nth-child(odd):not(.mv-head),
+  :root[data-theme="dark"] .sw-s{background:rgba(0,0,0,.32)}
+  /* 강조 행(당국 선물환) — 밝은 판본의 회색 바탕을 다크에서는 옅은 광으로 */
+  :root[data-theme="dark"] .rd-hi{background:color-mix(in srgb,var(--color-text) 9%,transparent)}
+  :root[data-theme="dark"] .fi-interp{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  /* 표 머리·라벨은 다크에서 자간이 더 벌어져 보인다 — 살짝 좁힌다 */
+  :root[data-theme="dark"] .sw-head,:root[data-theme="dark"] .ic-head,
+  :root[data-theme="dark"] .bi-head,:root[data-theme="dark"] .q-head,
+  :root[data-theme="dark"] .st-head,:root[data-theme="dark"] .rd-head,
+  :root[data-theme="dark"] .fb-head,
+  :root[data-theme="dark"] .flow-head span,
+  :root[data-theme="dark"] .cv-head span{letter-spacing:.12em}
 </style>
+
+<!--
+  판본(밝게 / 어둡게) 고르기.
+
+  기본은 "자동" — 보는 사람이 있는 곳의 일출부터 일몰까지는 밝은 판, 그
+  밖의 시간은 다크 판이다. 위치는 브라우저 시간대(IANA 타임존)로 알아낸다.
+  위치 권한을 묻지 않는 게 요점이다 — 시세 화면을 열자마자 권한 창이 뜨는
+  건 과하다. 이미 위치 권한을 내준 브라우저면 그 좌표로 더 정확하게 맞춘다.
+  시간대조차 못 읽으면 서울(KST) 기준으로 떨어진다.
+
+  헤더의 버튼으로 자동 → 밝게 → 어둡게 를 직접 고를 수 있고, 고른 값은
+  localStorage 에 남는다.
+
+  이 스크립트는 <head> 안에서 바로 실행된다 — body 가 그려지기 전에
+  data-theme 을 박아야 흰 화면이 한 번 번쩍이지 않는다.
+-->
+<script>
+(function () {
+  "use strict";
+
+  var MODE_KEY = "fxdesk.theme";        // "auto" | "light" | "dark"
+  var GEO_KEY  = "fxdesk.geo";          // 예전에 허락받아 둔 좌표 {lat,lon}
+  var SEOUL    = { lat: 37.5665, lon: 126.9780 };
+  var root     = document.documentElement;
+
+  function readLS(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function writeLS(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 저장만 못 한다 */ } }
+
+  var mode = readLS(MODE_KEY);
+  if (mode !== "light" && mode !== "dark") mode = "auto";
+
+  /* — 시간대 → 대략의 좌표 —
+     일출·일몰을 몇 분 단위로 맞출 일이 아니라 "지금이 낮이냐"만 가리면
+     되므로, 시간대를 대표 도시 한 곳으로 눌러 놓아도 충분하다. */
+  var TZ = {
+    "Asia/Seoul":[37.57,126.98], "Asia/Tokyo":[35.68,139.69], "Asia/Shanghai":[31.23,121.47],
+    "Asia/Hong_Kong":[22.32,114.17], "Asia/Taipei":[25.03,121.57], "Asia/Singapore":[1.35,103.82],
+    "Asia/Bangkok":[13.76,100.50], "Asia/Jakarta":[-6.21,106.85], "Asia/Manila":[14.60,120.98],
+    "Asia/Ho_Chi_Minh":[10.82,106.63], "Asia/Kuala_Lumpur":[3.14,101.69], "Asia/Kolkata":[19.08,72.88],
+    "Asia/Calcutta":[19.08,72.88], "Asia/Karachi":[24.86,67.01], "Asia/Dhaka":[23.81,90.41],
+    "Asia/Dubai":[25.20,55.27], "Asia/Riyadh":[24.71,46.68], "Asia/Tehran":[35.69,51.39],
+    "Asia/Jerusalem":[31.78,35.22], "Asia/Istanbul":[41.01,28.98], "Europe/Istanbul":[41.01,28.98],
+    "Europe/London":[51.51,-0.13], "Europe/Dublin":[53.35,-6.26], "Europe/Lisbon":[38.72,-9.14],
+    "Europe/Madrid":[40.42,-3.70], "Europe/Paris":[48.86,2.35], "Europe/Brussels":[50.85,4.35],
+    "Europe/Amsterdam":[52.37,4.90], "Europe/Berlin":[52.52,13.40], "Europe/Zurich":[47.38,8.54],
+    "Europe/Vienna":[48.21,16.37], "Europe/Rome":[41.90,12.50], "Europe/Prague":[50.08,14.44],
+    "Europe/Warsaw":[52.23,21.01], "Europe/Stockholm":[59.33,18.07], "Europe/Oslo":[59.91,10.75],
+    "Europe/Copenhagen":[55.68,12.57], "Europe/Helsinki":[60.17,24.94], "Europe/Athens":[37.98,23.73],
+    "Europe/Moscow":[55.76,37.62], "Europe/Kyiv":[50.45,30.52], "Europe/Kiev":[50.45,30.52],
+    "America/New_York":[40.71,-74.01], "America/Toronto":[43.65,-79.38], "America/Chicago":[41.88,-87.63],
+    "America/Denver":[39.74,-104.99], "America/Phoenix":[33.45,-112.07], "America/Los_Angeles":[34.05,-118.24],
+    "America/Vancouver":[49.28,-123.12], "America/Anchorage":[61.22,-149.90], "Pacific/Honolulu":[21.31,-157.86],
+    "America/Mexico_City":[19.43,-99.13], "America/Bogota":[4.71,-74.07], "America/Lima":[-12.05,-77.04],
+    "America/Santiago":[-33.45,-70.67], "America/Sao_Paulo":[-23.55,-46.63], "America/Argentina/Buenos_Aires":[-34.60,-58.38],
+    "Africa/Cairo":[30.04,31.24], "Africa/Lagos":[6.52,3.38], "Africa/Nairobi":[-1.29,36.82],
+    "Africa/Johannesburg":[-26.20,28.05], "Africa/Casablanca":[33.57,-7.59],
+    "Australia/Sydney":[-33.87,151.21], "Australia/Melbourne":[-37.81,144.96], "Australia/Brisbane":[-27.47,153.03],
+    "Australia/Perth":[-31.95,115.86], "Pacific/Auckland":[-36.85,174.76]
+  };
+
+  function guessPlace() {
+    // 1) 예전에 위치 권한을 내줬다면 그때 좌표가 가장 정확하다
+    var saved = readLS(GEO_KEY);
+    if (saved) {
+      try {
+        var g = JSON.parse(saved);
+        if (isFinite(g.lat) && isFinite(g.lon)) return { lat: g.lat, lon: g.lon };
+      } catch (e) { /* 깨진 값은 버린다 */ }
+    }
+    var tz = null;
+    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { /* 없는 브라우저 */ }
+    if (tz && TZ[tz]) return { lat: TZ[tz][0], lon: TZ[tz][1] };
+    // 2) 표에 없는 시간대 — UTC 오프셋에서 경도를 되짚는다. 경도 15° 가
+    //    한 시간이므로 오프셋만으로도 그곳의 정오가 언제인지는 맞는다.
+    //    위도는 알 길이 없어 중위도(37.5°)로 둔다 — 낮 길이만 어림한다.
+    var off = -new Date().getTimezoneOffset();          // 분, 동쪽이 +
+    if (isFinite(off)) return { lat: 37.5, lon: Math.max(-180, Math.min(180, off / 4)) };
+    // 3) 시간대조차 못 읽으면 서울 기준
+    return SEOUL;
+  }
+
+  /* — 일출·일몰 (NOAA 근사) —
+     태양 고도 -0.833° 를 지나는 시각. 대기 굴절과 태양 반지름까지 넣은
+     통상적인 "해가 뜬 시각" 정의다. */
+  var RAD = Math.PI / 180, J1970 = 2440588, J2000 = 2451545, OBL = RAD * 23.4397;
+
+  function toDays(date) { return date.valueOf() / 86400000 - 0.5 + J1970 - J2000; }
+  function fromJulian(j) { return new Date((j + 0.5 - J1970) * 86400000); }
+
+  function sunTimes(date, lat, lon) {
+    var lw = RAD * -lon, phi = RAD * lat, d = toDays(date);
+    var n = Math.round(d - 0.0009 - lw / (2 * Math.PI));
+    var ds = 0.0009 + lw / (2 * Math.PI) + n;
+    var M = RAD * (357.5291 + 0.98560028 * ds);
+    var L = M + RAD * (1.9148 * Math.sin(M) + 0.02 * Math.sin(2 * M) + 0.0003 * Math.sin(3 * M))
+              + RAD * 102.9372 + Math.PI;
+    var dec = Math.asin(Math.sin(OBL) * Math.sin(L));
+    var Jnoon = J2000 + ds + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+    var cosW = (Math.sin(RAD * -0.833) - Math.sin(phi) * Math.sin(dec)) / (Math.cos(phi) * Math.cos(dec));
+    // |cos| > 1 이면 그날은 해가 아예 안 지거나(백야) 안 뜬다(극야)
+    if (cosW <= -1) return { polar: "day" };
+    if (cosW >= 1) return { polar: "night" };
+    var w = Math.acos(cosW);
+    var Jset = J2000 + (0.0009 + (w + lw) / (2 * Math.PI) + n) + 0.0053 * Math.sin(M) - 0.0069 * Math.sin(2 * L);
+    return { sunrise: fromJulian(Jnoon - (Jset - Jnoon)), sunset: fromJulian(Jset) };
+  }
+
+  // 지금이 낮인가. 자동 판본은 이 한 줄로 갈린다.
+  function isDaylight() {
+    var place = guessPlace();
+    var now = new Date();
+    var s = sunTimes(now, place.lat, place.lon);
+    if (s.polar) return s.polar === "day";
+    return now >= s.sunrise && now < s.sunset;
+  }
+
+  function resolve() {
+    if (mode === "light" || mode === "dark") return mode;
+    return isDaylight() ? "light" : "dark";
+  }
+
+  function paint() {
+    var theme = resolve();
+    root.setAttribute("data-theme", theme);
+    root.setAttribute("data-theme-mode", mode);
+    return theme;
+  }
+
+  // <head> 에서 한 번 — 첫 페인트가 이미 제 판본으로 나온다
+  paint();
+
+  /* — 헤더 버튼 — 자동 → 밝게 → 어둡게 순으로 돈다 — */
+  var LABEL = {
+    ko: { auto: "자동", light: "밝게", dark: "어둡게" },
+    en: { auto: "Auto", light: "Light", dark: "Dark" }
+  };
+  // 해(밝게) · 달(어둡게) — 지금 적용된 판본을 그대로 보여준다
+  var ICON = {
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>',
+    dark:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2z"/></svg>'
+  };
+
+  function label() {
+    var lang = root.lang === "en" ? "en" : "ko";
+    return LABEL[lang][mode];
+  }
+
+  function refresh() {
+    var theme = paint();
+    var btn = document.getElementById("theme-btn");
+    if (!btn) return;
+    // 아이콘은 "지금 무슨 판본인가", 글자는 "무엇이 그걸 정하는가"를 말한다.
+    // 자동이면 해/달 아이콘 옆에 AUTO 가 붙어, 지금 낮으로 보고 있다는 뜻이 된다.
+    btn.innerHTML = ICON[theme] + '<span>' + label() + '</span>';
+    btn.setAttribute("aria-label", label());
+    btn.title = label();
+  }
+
+  function cycle() {
+    mode = mode === "auto" ? "light" : mode === "light" ? "dark" : "auto";
+    writeLS(MODE_KEY, mode);
+    refresh();
+  }
+
+  // 이미 위치 권한을 내준 브라우저에서만 조용히 좌표를 받아 둔다.
+  // 권한 창은 절대 띄우지 않는다 — state 가 "granted" 일 때만 부른다.
+  function refineByGeolocation() {
+    if (!navigator.geolocation || !navigator.permissions || !navigator.permissions.query) return;
+    navigator.permissions.query({ name: "geolocation" }).then(function (st) {
+      if (st.state !== "granted") return;
+      navigator.geolocation.getCurrentPosition(function (pos) {
+        writeLS(GEO_KEY, JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }));
+        refresh();
+      }, function () { /* 못 받으면 시간대 추정으로 간다 */ }, { maximumAge: 6 * 3600 * 1000, timeout: 8000 });
+    }).catch(function () { /* permissions API 가 없는 브라우저 */ });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    var btn = document.getElementById("theme-btn");
+    if (btn) btn.addEventListener("click", cycle);
+    refresh();
+    refineByGeolocation();
+    // 해가 지는 순간 새로고침 없이 넘어가도록 10분마다 다시 가린다
+    setInterval(refresh, 10 * 60 * 1000);
+  });
+
+  // 언어를 바꾸면 app.js 가 불러 준다 (applyStaticText)
+  window.__fxTheme = { refresh: refresh, cycle: cycle };
+})();
+</script>
+<script>
+  /* 리빌 준비 — motion.js 가 뜨기 전에 .js-motion 을 붙여 두어야 내용이
+     한 번 보였다가 사라지는 깜빡임이 없다. 다만 모듈이 못 뜨면 화면이
+     영영 빈 채로 남으므로, 3초 안에 .motion-ready 가 안 붙으면 도로 뗀다. */
+  (function () {
+    var root = document.documentElement;
+    root.classList.add("js-motion");
+    window.__motionFailsafe = setTimeout(function () {
+      root.classList.remove("js-motion");
+    }, 3000);
+  })();
+</script>
 </head>
 <body>
 
-<div style="max-width:1180px;margin:0 auto;background:#f2f2f3;border-left:1px solid var(--color-divider);border-right:1px solid var(--color-divider);min-height:100vh">
+<div class="sheet">
 
   <!-- header -->
-  <div class="nav" style="border-bottom:1px solid var(--color-divider);padding:16px 26px;position:sticky;top:0;z-index:30;background:#f2f2f3">
-    <span class="nav-brand" style="font-size:20px;margin-right:0">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:12px;font-weight:400;color:var(--c-dim);letter-spacing:.14em;text-transform:uppercase">Market Board</span></span>
+  <div class="nav" style="border-bottom:2px solid var(--rule-heavy);padding:13px 30px 11px;position:sticky;top:0;z-index:30;background:var(--color-bg)">
+    <span class="nav-brand" style="font-size:22px;margin-right:0;letter-spacing:-.035em">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:10px;font-weight:600;color:var(--c-dim);letter-spacing:.22em;text-transform:uppercase">Market Board</span></span>
     <div id="gsearch-wrap" style="position:relative;flex:1;max-width:360px;margin-right:auto">
       <input id="global-search" class="input" type="text" data-i18n-ph="nav.search.ph" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
-      <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--color-divider);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
+      <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--rule-mid);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
     </div>
     <!-- 한/영 — 보드 전체 문구를 갈아 끼운다 (app.js 의 applyLang).
          고른 언어는 localStorage 에 남아 다음 접속에도 그대로다. -->
@@ -291,75 +636,80 @@
       <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang" id="lang-ko" checked><span>한</span></label>
       <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang" id="lang-en"><span>EN</span></label>
     </div>
+    <!-- 밝게 / 어둡게 — 기본은 자동(해 뜨면 밝게, 지면 어둡게). 머리의 테마 스크립트가 맡는다 -->
+    <button type="button" id="theme-btn" class="theme-btn" aria-label="테마"></button>
     <span id="conn-badge" class="conn-badge"><span id="conn-dot" class="conn-dot connecting"></span><span id="conn-text" data-i18n="conn.connecting">연결 중…</span></span>
-    <span class="mono" id="clock" style="font-size:13px;font-weight:500"></span>
+    <span class="mono" id="clock" style="font-size:16px;font-weight:500;letter-spacing:-.025em"></span>
     <span class="mono" id="today" style="font-size:12px;color:var(--c-dim)"></span>
   </div>
 
   <!-- ticker strip -->
-  <div id="ticker-strip" style="display:flex;gap:0;border-bottom:1px solid var(--color-divider);background:#e9e9ea;overflow-x:auto"></div>
+  <div id="ticker-strip" style="background:var(--color-bg)"><div id="ticker-track"></div></div>
 
-  <div class="page-pad" style="padding:22px 26px 32px;display:flex;flex-direction:column;gap:22px">
+  <div class="page-pad" style="padding:0 30px 40px;display:flex;flex-direction:column;gap:0">
 
     <!-- FX — compact, by region -->
-    <div class="blueprint panel">
+    <div class="blueprint panel reveal">
       <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
       <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
-        <h4 style="margin:0" data-i18n="fx.title">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
+        <h4 class="mask-reveal" style="margin:0" data-i18n="fx.title">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
         <span style="font-size:11px" class="text-muted" data-i18n="fx.sub">지역별 · 실시간 (Yahoo Finance)</span>
       </div>
-      <div id="fx-regions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 26px">
+      <div id="fx-regions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
         <div id="fx-col-0"></div>
         <div id="fx-col-1"></div>
         <div id="fx-col-2"></div>
       </div>
-      <div id="fx-news-block" data-ko-only style="margin-top:14px;border-top:1px solid var(--color-divider);padding-top:10px">
-        <div style="font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:4px" data-i18n="fxnews.label">환율 주요 뉴스 <span style="color:var(--c-label);letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
+      <div id="fx-news-block" data-ko-only style="margin-top:16px;border-top:1px solid var(--rule-mid);padding-top:10px">
+        <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);margin-bottom:5px" data-i18n="fxnews.label">환율 주요 뉴스 <span style="color:var(--c-label);letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
         <div id="fx-news-list" class="nws-list"></div>
         <div id="fx-news-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
       </div>
     </div>
 
     <!-- body: full-width paired rows -->
-    <div style="display:flex;flex-direction:column;gap:22px">
+    <div style="display:flex;flex-direction:column;gap:0">
 
-    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+    <div class="row-pair" style="display:grid;grid-template-columns:1.34fr 1fr;gap:0;align-items:start">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="idx.title">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
-          <div id="idx-main" style="display:grid;grid-template-columns:1fr 1fr;gap:0 26px">
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="idx.title">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
+          <div id="idx-main" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
             <div id="idx-col-0"></div>
             <div id="idx-col-1"></div>
           </div>
         </div>
-        <div class="blueprint panel">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="usrates.title">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="usrates.title">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
           <div id="rates-list"></div>
         </div>
     </div>
 
-    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1.22fr;gap:0;align-items:start">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="krrates.title">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="krrates.title">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
           <div id="kr-rates-list"></div>
         </div>
-        <div class="blueprint panel">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="comm.title">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="comm.title">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
           <div id="commodities-list"></div>
         </div>
     </div>
 
-    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+    <div class="row-pair" style="display:grid;grid-template-columns:1.18fr 1fr;gap:0;align-items:start">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="krmv.title">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
-            <div class="seg" style="height:28px">
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span data-i18n="seg.up">상승</span></label>
-              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-losers"><span data-i18n="seg.down">하락</span></label>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="krmv.title">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+            <div style="display:flex;align-items:center;gap:10px">
+              <span id="movers-session" class="mono" style="font-size:11px;color:var(--c-label)"></span>
+              <div class="seg" style="height:28px">
+                <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-gainers" checked><span data-i18n="seg.up">상승</span></label>
+                <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" id="mv-losers"><span data-i18n="seg.down">하락</span></label>
+              </div>
             </div>
           </div>
           <div class="scroll-x"><div id="movers-list" class="mv-list">
@@ -375,18 +725,21 @@
               <div class="mv-row"><span class="mv-rank">10</span><span class="mv-name">셀트리온</span><span class="mono mv-px">187,900</span><span class="mono mv-pct up">+1.72%</span></div>
           </div></div>
         </div>
-        <div class="blueprint panel">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="krmt.title">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 class="mask-reveal" style="margin:0" data-i18n="krmt.title">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+            <span id="mt-session" class="mono" style="font-size:11px;color:var(--c-label)"></span>
+          </div>
           <div class="scroll-x"><div id="kr-most-traded-list" class="mv-list"></div></div>
         </div>
     </div>
 
-    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start">
-        <div class="blueprint panel">
+    <div class="row-pair" style="display:grid;grid-template-columns:1fr 1.26fr;gap:0;align-items:start">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="usmv.title">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="usmv.title">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
             <div class="seg" style="height:28px">
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-gainers" checked><span data-i18n="seg.up">상승</span></label>
               <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" id="usmv-losers"><span data-i18n="seg.down">하락</span></label>
@@ -394,18 +747,18 @@
           </div>
           <div class="scroll-x"><div id="us-movers-list" class="mv-list"></div></div>
         </div>
-        <div class="blueprint panel">
+        <div class="blueprint panel reveal">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="usma.title">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="usma.title">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
           <div class="scroll-x"><div id="us-most-active-list" class="mv-list"></div></div>
         </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
-        <div class="blueprint panel collapsible" data-panel="flow">
+    <div style="display:grid;grid-template-columns:1fr;gap:0;align-items:start">
+        <div class="blueprint panel collapsible reveal" data-panel="flow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="flow.title">주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="flow.title">주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
             <div class="seg" style="height:28px">
               <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kospi" checked><span data-i18n="flow.kospi">코스피</span></label>
               <label class="seg-opt" style="padding:4px 12px;font-size:12px"><input type="radio" name="flow" id="flow-kosdaq"><span data-i18n="flow.kosdaq">코스닥</span></label>
@@ -427,11 +780,11 @@
         </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:1fr;gap:22px;align-items:start">
-        <div class="blueprint panel collapsible" data-panel="bflow">
+    <div style="display:grid;grid-template-columns:1fr;gap:0;align-items:start">
+        <div class="blueprint panel collapsible reveal" data-panel="bflow">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="bflow.title">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="bflow.title">채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
             <div class="seg seg-nowrap" id="bflow-seg" style="height:28px"></div>
           </div>
           <div class="scroll-x"><div id="bflow-table"></div></div>
@@ -448,10 +801,10 @@
           <div id="bflow-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="swap">
+        <div class="blueprint panel collapsible reveal" data-panel="swap">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="swap.title">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="swap.title">원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
             <span id="swap-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="swap.pt">FX 스왑포인트</span> <span style="color:var(--c-label);font-weight:400" id="swap-spot"></span></h5>
@@ -466,10 +819,10 @@
           <div class="scroll-x"><div id="bondirs-table"></div></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="curve">
+        <div class="blueprint panel collapsible reveal" data-panel="curve">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="curve.title">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="curve.title">채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
             <span id="curve-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <h5 style="margin:0 0 6px;font-size:12px;font-weight:500;letter-spacing:.02em"><span data-i18n="curve.quotes">지표종목 최종호가</span> <span style="color:var(--c-label);font-weight:400" id="quotes-asof"></span></h5>
@@ -484,54 +837,56 @@
           <div id="curve-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="strate">
+        <div class="blueprint panel collapsible reveal" data-panel="strate">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="strate.title">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="strate.title">단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
             <span id="strate-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="strate-table"></div></div>
           <div id="strate-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px"></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="drain">
+        <div class="blueprint panel collapsible reveal" data-panel="drain">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="drain.title">외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="drain.title">외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
             <span id="drain-asof" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="drain-table"></div></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="fxbond">
+        <div class="blueprint panel collapsible reveal" data-panel="fxbond">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="fxbond.title">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="fxbond.title">외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
             <span id="fxbond-count" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div class="scroll-x"><div id="fxbond-list"></div></div>
           <div id="fxbond-empty" data-i18n="fxbond.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">발행 내역을 불러오지 못했습니다.</div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="basis">
+        <div class="blueprint panel collapsible reveal" data-panel="basis">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <h4 style="margin:0 0 10px" data-i18n="basis.title">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
+          <h4 class="mask-reveal" style="margin:0 0 10px" data-i18n="basis.title">코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
           <div id="basis-body"></div>
           <div id="basis-foot" class="mono" style="font-size:10.5px;color:var(--c-label);padding-top:8px;line-height:1.5;white-space:pre-line"></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="custody">
+        <div class="blueprint panel collapsible reveal" data-panel="custody">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:12px">
-            <h4 style="margin:0" data-i18n="custody.title">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="custody.title">국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
             <span id="custody-source" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div id="custody-stats" style="display:flex;flex-wrap:wrap;gap:0 34px;margin-bottom:12px"></div>
-          <div class="scroll-x"><div id="custody-chart"></div></div>
+          <!-- 이 보드에서 유일하게 그림에 가까운 칸이라 미세 패럴랙스를 건다.
+               숫자 표에는 걸지 않는다 — 눈금과 값이 어긋나 보이면 잘못 읽는다. -->
+          <div class="scroll-x"><div id="custody-chart" data-parallax="10"></div></div>
           <div id="custody-empty" data-i18n="custody.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="kwnews" data-ko-only>
+        <div class="blueprint panel collapsible reveal" data-panel="kwnews" data-ko-only>
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
             <h4 style="margin:0;white-space:nowrap">키워드 뉴스 <span class="kop" style="font-size:11px">Keyword News · 네이버 뉴스 검색 · 관련도순</span></h4>
@@ -547,10 +902,10 @@
           <div id="kwnews-pagination" style="display:none;justify-content:center;gap:4px;margin-top:10px;flex-wrap:wrap"></div>
         </div>
 
-        <div class="blueprint panel collapsible" data-panel="news">
+        <div class="blueprint panel collapsible reveal" data-panel="news">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <div class="panel-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px">
-            <h4 style="margin:0" data-i18n="news.title">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
+            <h4 class="mask-reveal" style="margin:0" data-i18n="news.title">주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
             <span id="news-count" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div style="position:relative;margin-bottom:8px">
@@ -564,7 +919,7 @@
 
     </div>
 
-    <div style="text-align:center;font-size:10.5px;color:var(--c-label);padding-top:6px;letter-spacing:.04em">
+    <div style="text-align:left;font-size:10px;color:var(--c-label);padding-top:12px;margin-top:20px;border-top:1px solid var(--rule-mid);letter-spacing:.06em">
       <span data-i18n="footer">FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신</span> <span id="as-of" class="mono">—</span>
     </div>
   </div>
@@ -603,13 +958,13 @@
         </span>
       </div>
       <svg class="pop-chart" viewBox="0 0 640 132" preserveAspectRatio="none">
-        <line x1="0" y1="33" x2="640" y2="33" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <line x1="0" y1="66" x2="640" y2="66" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <line x1="0" y1="99" x2="640" y2="99" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <path id="stk-area" fill="rgba(89,128,166,.14)" d=""></path>
-        <path id="stk-line" fill="none" stroke="#5980a6" stroke-width="1.6" d=""></path>
-        <line id="stk-cross" x1="0" y1="0" x2="0" y2="132" stroke="#5980a6" stroke-opacity=".3" stroke-dasharray="2 3"></line>
-        <circle id="stk-dot" r="3" fill="#5980a6" cx="0" cy="0"></circle>
+        <line x1="0" y1="33" x2="640" y2="33" style="stroke:var(--rule-hair)"></line>
+        <line x1="0" y1="66" x2="640" y2="66" style="stroke:var(--rule-hair)"></line>
+        <line x1="0" y1="99" x2="640" y2="99" style="stroke:var(--rule-hair)"></line>
+        <path id="stk-area" style="fill:color-mix(in srgb,var(--color-text) 9%,transparent)" d=""></path>
+        <path id="stk-line" fill="none" style="stroke:var(--color-text)" stroke-width="1.6" d=""></path>
+        <line id="stk-cross" x1="0" y1="0" x2="0" y2="132" style="stroke:var(--color-text);stroke-opacity:.35" stroke-dasharray="2 3"></line>
+        <circle id="stk-dot" r="3" style="fill:var(--color-text)" cx="0" cy="0"></circle>
       </svg>
       <div class="pop-axis">
         <span id="stk-axis-l"></span>
@@ -680,13 +1035,13 @@
         </span>
       </div>
       <svg class="pop-chart" viewBox="0 0 640 132" preserveAspectRatio="none">
-        <line x1="0" y1="33" x2="640" y2="33" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <line x1="0" y1="66" x2="640" y2="66" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <line x1="0" y1="99" x2="640" y2="99" stroke="#1d1f20" stroke-opacity=".07"></line>
-        <path id="ind-area" fill="rgba(89,128,166,.14)" d=""></path>
-        <path id="ind-line" fill="none" stroke="#5980a6" stroke-width="1.6" d=""></path>
-        <line id="ind-cross" x1="0" y1="0" x2="0" y2="132" stroke="#5980a6" stroke-opacity=".3" stroke-dasharray="2 3"></line>
-        <circle id="ind-dot" r="3" fill="#5980a6" cx="0" cy="0"></circle>
+        <line x1="0" y1="33" x2="640" y2="33" style="stroke:var(--rule-hair)"></line>
+        <line x1="0" y1="66" x2="640" y2="66" style="stroke:var(--rule-hair)"></line>
+        <line x1="0" y1="99" x2="640" y2="99" style="stroke:var(--rule-hair)"></line>
+        <path id="ind-area" style="fill:color-mix(in srgb,var(--color-text) 9%,transparent)" d=""></path>
+        <path id="ind-line" fill="none" style="stroke:var(--color-text)" stroke-width="1.6" d=""></path>
+        <line id="ind-cross" x1="0" y1="0" x2="0" y2="132" style="stroke:var(--color-text);stroke-opacity:.35" stroke-dasharray="2 3"></line>
+        <circle id="ind-dot" r="3" style="fill:var(--color-text)" cx="0" cy="0"></circle>
       </svg>
       <div class="pop-axis">
         <span id="ind-axis-l"></span>
@@ -711,7 +1066,9 @@
   </div>
 </div>
 
-<script src="/static/i18n.js?v=4"></script>
-<script src="/static/app.js?v=23"></script>
+<script src="/static/vendor/lenis.min.js?v=1"></script>
+<script src="/static/i18n.js?v=5"></script>
+<script src="/static/app.js?v=33"></script>
+<script type="module" src="/static/motion.js?v=6"></script>
 </body>
 </html>

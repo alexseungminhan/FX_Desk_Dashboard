@@ -1,0 +1,12 @@
+# 파이썬 가상환경 — 재현 가능한 산물이다. requirements.txt 로 다시 만든다.
+# 이미 추적되고 있다면 아래 한 줄로 색인에서만 뺀다 (파일은 그대로 남는다):
+#   git rm -r --cached backend/.venv
+backend/.venv/
+__pycache__/
+*.pyc
+
+# 맥이 폴더마다 뿌리는 파인더 메타데이터
+.DS_Store
+
+# 마지막으로 성공한 수집 결과 (backend/disk_cache.py) — 매 세션 바뀐다
+backend/cache/

@@ -1,63 +1,102 @@
-/* Industry — design-system tokens and component classes. This file is the source of truth for the system's look; retune it here and see readme.md. */
-@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;700&family=Barlow+Condensed:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+/* Industry — design-system tokens and component classes.
+   이 파일이 보드 전체 생김새의 원본이다. 판본은 두 벌 —
+   밝은 판(:root)과 다크 판(:root[data-theme="dark"]). 값만 갈아 끼울 뿐
+   규칙은 같다: 유채색은 데이터(상승 빨강 / 하락 파랑)만 갖고, 크롬(잉크·
+   회색)은 명도로만 위계를 만든다.
 
+   판본을 고르는 건 FX Desk Board.html 머리의 테마 스크립트다 — 사용자
+   위치의 일출~일몰 사이면 밝은 판, 그 밖이면 다크 판. 헤더의 버튼으로
+   자동 / 밝게 / 어둡게를 직접 고를 수도 있다. */
+/* 웹폰트는 페이지 <head> 의 <link> 로 받는다. 여기서 @import 로 부르면
+   브라우저가 이 파일을 내려받아 파싱한 뒤에야 폰트 요청을 시작해서 한 번
+   더 왕복한다. 요청하는 굵기 목록은 그 <link> 에 적혀 있다. */
+
+/* Industry — design-system tokens, 신문 시세면 판본.
+   여백이 아니라 괘선 굵기 3단(hair / thin / mid / heavy)과 타입 스케일로
+   위계를 만든다. 색은 두 벌로 갈라 둔다 — 데이터(상승 빨강/하락 파랑)와
+   크롬(잉크·회색뿐, 유채색 없음). 둘이 절대 겹치지 않는다. */
 :root {
-  --color-bg: #f2f2f3;
-  --color-surface: #e9e9ea;
-  --color-text: #1d1f20;
-  --color-accent: #5980a6;
-  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+  /* 흑백 — 유채색은 데이터에만 남긴다 */
+  --color-bg: #ffffff;
+  --color-surface: #f1f3f6;
+  --color-text: #101215;               /* 순검정 아님 — 차가운 잉크 */
+  --color-accent: #101215;             /* 잉크. 유채색 액센트를 아예 안 쓴다 —
+                                          유채색은 데이터(빨강/파랑)만 갖는다 */
+  --color-divider: color-mix(in srgb, #101215 20%, transparent);
 
-  /* Tonal ramps — generated in OKLCH on one shared lightness scale, so the
-     same step of any role matches the others in visual value. */
-  --color-neutral-100: #f5f5f8;
-  --color-neutral-200: #e7e7ea;
-  --color-neutral-300: #d4d4d7;
-  --color-neutral-400: #b7b7ba;
-  --color-neutral-500: #98989b;
-  --color-neutral-600: #7a7a7d;
-  --color-neutral-700: #5d5d60;
-  --color-neutral-800: #424244;
-  --color-neutral-900: #2b2b2d;
+  /* 괘선 4단 — 이 화면의 구분은 전부 이 네 값으로 한다 */
+  --rule-hair:  color-mix(in srgb, #101215 13%, transparent);
+  --rule-thin:  color-mix(in srgb, #101215 26%, transparent);
+  --rule-mid:   color-mix(in srgb, #101215 55%, transparent);
+  --rule-heavy: #101215;
 
-  --color-accent-100: #eef6ff;
-  --color-accent-200: #d6ebff;
-  --color-accent-300: #b5d9fd;
-  --color-accent-400: #94bce3;
-  --color-accent-500: #749dc4;
-  --color-accent-600: #597ea3;
-  --color-accent-700: #416180;
-  --color-accent-800: #2c455d;
-  --color-accent-900: #1d2d3d;
+  /* 데이터 색 — 한국 시장 관습. 상승 빨강 / 하락 파랑. 뒤집지 않는다.
+     액센트(황토)와 색상환에서 멀리 떨어뜨려 UI 색과 혼동되지 않게 했다. */
+  --c-up:   #cf1f14;
+  --c-down: #1550b4;
+  /* 보합, 그리고 미국장 관습(상승 초록)용 한 칸. 서버가 색 대신 이 이름을
+     보내므로 (backend/main.py 의 _colors_for) 판본마다 여기서 풀린다. */
+  --c-flat: var(--color-neutral-600);
+  --c-gain: #1a8a4a;
 
-  /* 역할 이름 — 보드 전체가 쓰는 회색 네 단계. 위 뉴트럴 램프와 같은 값
-     이지만, 쓰는 쪽에서 "몇 번 회색"이 아니라 "무슨 용도"로 고르게 한다.
-     톤을 조정할 일이 생기면 여기 네 줄만 건드리면 된다. */
+  /* 뉴트럴 램프 — 종이 쪽으로 따뜻하게 재조정 */
+  --color-neutral-100: #f7f8fa;
+  --color-neutral-200: #ecedf1;
+  --color-neutral-300: #dbdde3;
+  --color-neutral-400: #b6bac2;
+  --color-neutral-500: #8d929b;
+  --color-neutral-600: #696e77;
+  --color-neutral-700: #4b5057;
+  --color-neutral-800: #33373d;
+  --color-neutral-900: #1f2227;
+
+  /* 액센트 램프 — 무채색. 강조는 색이 아니라 값(明度)으로 한다 */
+  --color-accent-100: #f2f4f7;
+  --color-accent-200: #e4e7ec;
+  --color-accent-300: #cfd3da;
+  --color-accent-400: #a9aeb7;
+  --color-accent-500: #7f858e;
+  --color-accent-600: #5b6068;
+  --color-accent-700: #3f434a;
+  --color-accent-800: #272b31;
+  --color-accent-900: #101215;
+
+  /* 역할 이름 — 쓰는 쪽에서 "몇 번 회색"이 아니라 용도로 고른다 */
   --c-label: var(--color-neutral-500);   /* 표 머리·캡션·타임스탬프 */
   --c-dim:   var(--color-neutral-600);   /* 보조 텍스트 */
   --c-sub:   var(--color-neutral-700);   /* 본문 다음 단계 */
-  --c-empty: #c4c4c6;                    /* 값 없음(—) — 램프보다 더 물러난다 */
+  --c-empty: var(--color-neutral-400);   /* 값 없음(—) */
 
-  --font-heading: "Barlow Condensed", system-ui, sans-serif;
-  --font-heading-weight: 600;
-  --font-body: "Barlow", system-ui, sans-serif;
+  /* 라틴 + 한글을 한 벌로 묶는다 — 한글이 OS 고딕으로 떨어지지 않게 */
+  --font-heading: "Bricolage Grotesque", "Gothic A1", system-ui, sans-serif;
+  --font-heading-weight: 700;
+  --font-body: "Public Sans", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Sans KR", ui-monospace, monospace;
 
-  --space-1: 3.4px;
-  --space-2: 6.8px;
-  --space-3: 10.2px;
-  --space-4: 13.6px;
-  --space-6: 20.4px;
-  --space-8: 27.2px;
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-6: 18px;
+  --space-8: 24px;
 
-  --radius-sm: 2px;
-  --radius-md: 4px;
-  --radius-lg: 7px;
+  /* 모서리는 전부 직각 — 계기판에 둥근 카드는 없다 */
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
 
-  /* Elevation — derived from the ground: soft ink-tinted shadows on a
-     light theme, a hairline edge + ambient darkness on a dark one. */
-  --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
-  --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
-  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px color-mix(in srgb, #101215 12%, transparent);
+  --shadow-lg: 0 16px 44px color-mix(in srgb, #101215 30%, transparent);
+
+  /* 지반 밖(브라우저 여백)·팝업 장막·스크롤 끝 그림자.
+     다크에서 갈라져야 하는 값이라 토큰으로 뽑아 둔다. */
+  --color-canvas: #e4e7ec;
+  --pop-scrim: rgba(16, 18, 21, .55);
+  --scroll-ink: color-mix(in srgb, #101215 22%, transparent);
+
+  /* 폼 컨트롤·스크롤바가 지반을 따라오게 한다 */
+  color-scheme: light;
 }
 
 body {
@@ -67,100 +106,97 @@ body {
 }
 h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
 
+/* 카드를 버렸으므로 .blueprint 는 상자가 아니라 "구획을 여는 괘선"이다.
+   모서리 십자(.corner)는 중간에 남기지 않고 통째로 걷었다. */
 .blueprint {
   position: relative;
-  border: 1px solid var(--color-divider);
+  border: 0;
+  border-top: 1px solid var(--rule-mid);
   border-radius: 0;
 }
-.blueprint > .corner {
-  position: absolute; width: 11px; height: 11px;
-  color: color-mix(in srgb, var(--color-text) 55%, transparent);
-}
-.blueprint > .corner::before, .blueprint > .corner::after {
-  content: ""; position: absolute; background: currentColor;
-}
-.blueprint > .corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
-.blueprint > .corner::after  { top: 5px; left: 0; width: 100%; height: 1px; }
-.blueprint > .corner.tl { top: -6px; left: -6px; }
-.blueprint > .corner.tr { top: -6px; right: -6px; }
-.blueprint > .corner.bl { bottom: -6px; left: -6px; }
-.blueprint > .corner.br { bottom: -6px; right: -6px; }
+.blueprint > .corner { display: none; }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Components — built with the tokens above. Plain CSS
-   on plain HTML: no JavaScript, no build step. Each class is documented in
-   readme.md and demonstrated in foundations/ and components/.
+   Components — built with the tokens above. Plain CSS on plain HTML.
    ══════════════════════════════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; }
-body { margin: 0; font-size: 15px; line-height: 1.55; font-weight: 400; }
+body { margin: 0; font-size: 12px; line-height: 1.5; font-weight: 400;
+       -webkit-font-smoothing: antialiased; }
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  line-height: 1.12; letter-spacing: -0.015em; margin: 0 0 var(--space-2);
+  line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 var(--space-2);
+  word-break: keep-all;
 }
-h1 { font-size: 42px; }
-h2 { font-size: 32px; }
+h1 { font-size: 46px; }
+h2 { font-size: 34px; }
 h3 { font-size: 25px; }
-h4 { font-size: 20px; }
-h5 { font-size: 16px; }
-h6 { font-size: 13px; }
-h6 { letter-spacing: 0.08em; text-transform: uppercase; }
+h4 { font-size: 17px; letter-spacing: -0.015em; }
+h5 { font-size: 14px; }
+h6 { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
 p { margin: 0 0 var(--space-3); }
-a { color: var(--color-accent); text-underline-offset: 3px; }
-.text-muted { color: color-mix(in srgb, var(--color-text) 55%, transparent); }
+a { color: var(--color-text); text-decoration: none; text-underline-offset: 3px; }
+a:hover { color: var(--color-text); text-decoration: underline; }
+.text-muted { color: var(--c-dim); }
 :focus { outline: none; }
-:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
-::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+::selection { background: var(--color-accent-200); }
 
 /* — buttons — */
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   cursor: pointer; text-decoration: none;
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 13px; line-height: 1.2; color: var(--color-text);
-  background: transparent; border: 1px solid transparent;
-  padding: calc(var(--space-2) * 0.85) var(--space-3);
-  border-radius: var(--radius-md);
+  font-family: var(--font-body); font-weight: 600;
+  font-size: 11.5px; line-height: 1.2; letter-spacing: 0.04em;
+  color: var(--color-text);
+  background: transparent; border: 1px solid var(--rule-thin);
+  padding: 5px var(--space-3);
+  border-radius: 0;
 }
 .btn svg { display: block; }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.btn-secondary { border-color: var(--color-divider); }
-.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
-.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary { border-color: var(--rule-thin); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 12%, transparent); }
 
-/* — forms — */
+/* — forms — 상자가 아니라 기입선 하나 — */
 .input {
-  width: 100%; min-height: 36px; padding: 6px 10px; font: inherit;
-  font-size: 14px; color: var(--color-text); caret-color: var(--color-accent);
-  background: var(--color-surface);
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  width: 100%; min-height: 28px; padding: 4px 2px; font: inherit;
+  font-size: 12px; color: var(--color-text); caret-color: var(--color-accent);
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--rule-thin); border-radius: 0;
 }
-.input:hover { border-color: color-mix(in srgb, var(--color-text) 45%, transparent); }
-.input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+.input::placeholder { color: var(--color-neutral-400); }
+.input:hover { border-bottom-color: var(--rule-mid); }
+.input:focus-visible { border-bottom-color: var(--color-accent); outline: none;
+  box-shadow: 0 1px 0 0 var(--color-accent); }
 .seg-opt input {
   position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
 }
 .seg {
   display: inline-flex; overflow: hidden;
-  border: 1px solid var(--color-divider); border-radius: var(--radius-md);
+  border: 1px solid var(--rule-thin); border-radius: 0;
 }
 .seg-opt {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 12px; font-size: 13px; cursor: pointer;
+  padding: 4px 11px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--c-sub); cursor: pointer;
 }
-.seg-opt + .seg-opt { border-left: 1px solid var(--color-divider); }
-.seg-opt:has(input:checked) { background: var(--color-accent); color: var(--color-bg); }
+.seg-opt + .seg-opt { border-left: 1px solid var(--rule-thin); }
+/* 선택된 탭은 액센트가 아니라 잉크로 채운다 — 황토는 구획 표시 전용 */
+.seg-opt:has(input:checked) { background: var(--color-text); color: var(--color-bg); }
 .seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
 .seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
 
-/* — tags — */
+/* — tags — 알약이 아니라 왼쪽 괘선 하나로 붙인다 — */
 .tag {
-  display: inline-flex; align-items: center; font-size: 11px;
-  letter-spacing: 0.02em; padding: 3px 10px;
-  border-radius: calc(var(--radius-md) * 0.75);
+  display: inline-flex; align-items: center;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
+  padding: 0 0 0 6px; border-radius: 0;
+  border-left: 2px solid var(--color-accent);
 }
-.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
-.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent); }
+.tag-accent { background: transparent; color: var(--c-dim); }
+.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent-700); padding: 1px 6px; }
 
 /* — navigation — */
 .nav {
@@ -169,87 +205,154 @@ a { color: var(--color-accent); text-underline-offset: 3px; }
   border-bottom: none;
 }
 .nav-brand {
-  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
-  font-size: 18px; margin-right: auto;
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 20px; letter-spacing: -0.03em; margin-right: auto;
 }
-.nav a { color: inherit; text-decoration: none; font-size: 14px; }
+.nav a { color: inherit; text-decoration: none; font-size: 12px; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
 
-/* — blueprint frame: components are wireframe objects (see .blueprint
-     and .corner above) — square, transparent, hairline-bordered — */
+/* — 직각 원칙 — */
 .btn, .input, .tag, .seg { border-radius: 0; }
-.btn { border: 1px solid var(--color-divider); }
 
 /* — FX Desk Board page-specific rules — */
-html, body { margin: 0; background: #e4e4e6; font-family: var(--font-body); }
-a { color: var(--color-accent); }
-a:hover { color: var(--color-accent-700); }
-.mono { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
-.kop { color: var(--color-accent); letter-spacing: .14em; text-transform: uppercase; font-family: var(--font-heading); }
+html, body { margin: 0; background: var(--color-canvas); font-family: var(--font-body); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1; letter-spacing: -0.02em; }
+.kop { color: var(--color-neutral-600); letter-spacing: .16em; text-transform: uppercase;
+       font-family: var(--font-body); font-weight: 600; }
 .stale-dot { opacity: .45; }
-.conn-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #5d5d60; }
-.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: #4ade80; }
-.conn-dot.down { background: #c0392b; }
-.conn-dot.connecting { background: #d4a017; }
+.conn-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 10px;
+              letter-spacing: .08em; text-transform: uppercase; color: var(--c-dim); }
+.conn-dot { width: 6px; height: 6px; border-radius: 0; background: var(--color-neutral-900); }
+.conn-dot.down { background: var(--c-up); }
+.conn-dot.connecting { background: var(--color-accent); }
 
 /* — clickable rows (open detail popups) — */
 .clickable-row { cursor: pointer; }
-.clickable-row:hover { background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
-/* 행은 div 지만 실제로는 버튼이다 — 키보드로 짚었을 때 어디에 있는지
-   보여야 Enter 를 누를 수 있다. */
-.clickable-row:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+.clickable-row:hover { background: color-mix(in srgb, var(--color-text) 9%, transparent); }
+.clickable-row:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
 
 /* — 상세 팝업 (popup.html 디자인: 종목/지표 공용) — */
-.pop-backdrop{position:fixed;inset:0;z-index:60;background:rgba(29,31,32,.42);backdrop-filter:blur(2px);display:flex;align-items:flex-start;justify-content:center;padding:44px 20px;overflow-y:auto}
+.pop-backdrop{position:fixed;inset:0;z-index:60;background:var(--pop-scrim);display:flex;align-items:flex-start;justify-content:center;padding:44px 20px;overflow-y:auto}
 .pop-backdrop[hidden]{display:none}
-/* 팝업이 떠 있는 동안 뒤 페이지는 얼어 있어야 한다 — 모바일에서 팝업 안을
-   스크롤하다 끝에 닿으면 뒤 페이지가 딸려 밀리는 걸 막는다. */
 html.modal-open, html.modal-open body{overflow:hidden}
-.pop{width:100%;max-width:720px;background:#f2f2f3;padding:20px 22px 18px;position:relative;box-shadow:var(--shadow-lg);font-family:var(--font-body);color:#1d1f20}
-.pop .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.pop{width:100%;max-width:720px;background:var(--color-bg);padding:18px 20px 16px;position:relative;box-shadow:var(--shadow-lg);border-top:3px solid var(--rule-heavy);font-family:var(--font-body);color:var(--color-text)}
+.pop .mono{font-family:var(--font-mono)}
 
 .pop-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .pop-title-row{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
-.pop-name{font-family:var(--font-heading);font-weight:600;font-size:25px;letter-spacing:.01em}
-.pop-code{font-size:12px;color:#7a7a7d}
-.pop-px-row{display:flex;align-items:baseline;gap:11px;margin-top:9px;flex-wrap:wrap}
-.pop-px{font-size:33px;font-weight:500;line-height:1}
-.pop-chg{font-size:15px}
-.pop-asof{font-size:11px;color:#98989b;letter-spacing:.04em}
-.pop-x{flex:none;width:30px;height:30px;border:1px solid var(--color-divider);background:transparent;color:#5d5d60;font-size:13px;line-height:1;cursor:pointer;font-family:var(--font-body)}
-.pop-x:hover{background:rgba(29,31,32,.07);color:#1d1f20}
+.pop-name{font-family:var(--font-heading);font-weight:700;font-size:24px;letter-spacing:-.02em}
+.pop-code{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-label)}
+.pop-px-row{display:flex;align-items:baseline;gap:11px;margin-top:7px;flex-wrap:wrap}
+.pop-px{font-size:40px;font-weight:400;line-height:1;letter-spacing:-.035em}
+.pop-chg{font-size:14px}
+.pop-asof{font-size:10px;color:var(--c-label);letter-spacing:.08em}
+.pop-x{flex:none;width:26px;height:26px;border:1px solid var(--rule-thin);background:transparent;color:var(--c-dim);font-size:12px;line-height:1;cursor:pointer;font-family:var(--font-body)}
+.pop-x:hover{background:var(--color-text);color:var(--color-bg)}
 
-.pop-chart-box{margin-top:16px;padding:11px 12px 8px;background:#e9e9ea;position:relative}
+.pop-chart-box{margin-top:14px;padding:10px 0 6px;background:transparent;border-top:1px solid var(--rule-thin);border-bottom:1px solid var(--rule-thin);position:relative}
 .pop-chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.pop-chart-label{font-size:10px;color:#7a7a7d;letter-spacing:.1em;text-transform:uppercase}
-.pop-range{display:flex;border:1px solid var(--color-divider)}
-.pop-range button{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.06em;padding:3px 9px;border:0;border-left:1px solid var(--color-divider);background:transparent;color:#5d5d60;cursor:pointer}
+.pop-chart-label{font-size:9.5px;color:var(--c-label);letter-spacing:.18em;text-transform:uppercase}
+.pop-range{display:flex;border:1px solid var(--rule-thin)}
+.pop-range button{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border:0;border-left:1px solid var(--rule-thin);background:transparent;color:var(--c-sub);cursor:pointer}
 .pop-range button:first-child{border-left:0}
-.pop-range button:hover{background:rgba(89,128,166,.14)}
-.pop-range button[aria-pressed="true"]{background:var(--color-accent);color:#f2f2f3}
+.pop-range button:hover{background:color-mix(in srgb,var(--color-text) 7%,transparent)}
+.pop-range button[aria-pressed="true"]{background:var(--color-text);color:var(--color-bg)}
 .pop-chart{display:block;width:100%;height:132px}
-.pop-axis{display:flex;justify-content:space-between;font-family:"IBM Plex Mono",monospace;font-size:10px;color:#7a7a7d;margin-top:2px}
+.pop-axis{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;color:var(--c-label);margin-top:2px}
 
-.pop-stats{margin-top:15px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}
-.pop-stats .stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid rgba(29,31,32,.08)}
-.pop-stats .stat span{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#7a7a7d}
-.pop-stats .stat b{font-family:"IBM Plex Mono",monospace;font-size:12.5px;font-weight:500}
+.pop-stats{margin-top:13px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}
+.pop-stats .stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dotted var(--rule-hair)}
+.pop-stats .stat span{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-label)}
+.pop-stats .stat b{font-family:var(--font-mono);font-size:12.5px;font-weight:500}
 
-.pop-sec-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);margin-bottom:7px}
-.pop-news{margin-top:17px}
-.pop-news-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:7px 0;border-top:1px solid rgba(29,31,32,.08)}
-.pop-news-row a{font-size:12.5px;line-height:1.4;color:#416180;text-decoration:none;text-wrap:pretty}
-.pop-news-row a:hover{color:#2c455d;text-decoration:underline}
-.pop-news-row span{font-family:"IBM Plex Mono",monospace;font-size:10.5px;color:#98989b;white-space:nowrap}
+.pop-sec-label{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);font-weight:700;margin-bottom:6px}
+.pop-news{margin-top:15px}
+.pop-news-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:5px 0;border-top:1px dotted var(--rule-hair)}
+.pop-news-row a{font-size:12.5px;line-height:1.4;color:var(--color-text);text-decoration:none;text-wrap:pretty}
+.pop-news-row a:hover{color:var(--color-accent-700);text-decoration:underline}
+.pop-news-row span{font-family:var(--font-mono);font-size:10px;color:var(--c-label);white-space:nowrap}
 
-.pop-foot{margin-top:18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
-.pop-source{font-family:"IBM Plex Mono",monospace;font-size:10px;color:#98989b;letter-spacing:.04em}
-.pop-actions{display:flex;gap:10px}
-.pop-actions .btn{padding:8px 16px;position:relative}
+.pop-foot{margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pop-source{font-family:var(--font-mono);font-size:9.5px;color:var(--c-label);letter-spacing:.04em}
+.pop-actions{display:flex;gap:8px}
+.pop-actions .btn{padding:6px 14px;position:relative}
 
 @media (max-width:640px){
   .pop-backdrop{padding:10px}
   .pop{padding:14px 14px 12px;max-width:100%}
   .pop-stats{grid-template-columns:repeat(2,1fr)}
-  .pop-name{font-size:21px}.pop-px{font-size:27px}
+  .pop-name{font-size:20px}.pop-px{font-size:30px}
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   다크 판본 — 밝은 판본을 지반만 뒤집었다. 램프 번호가 뜻하는 바는 그대로다:
+   100 = 지반에 가장 가까움, 900 = 가장 멂. 지반이 어두우므로 방향만 뒤집힌다.
+   ══════════════════════════════════════════════════════════════════════ */
+:root[data-theme="dark"] {
+  --color-bg: #0d1014;                 /* 순검정 아님 — 찬 무연탄 */
+  --color-surface: #171b21;
+  --color-text: #e9edf3;               /* 순백 아님 — 형광 눈부심을 줄인다 */
+  --color-accent: #e9edf3;             /* 지문(紙紋) 색과 동일. 유채색 액센트 없음 */
+  --color-divider: color-mix(in srgb, #e9edf3 22%, transparent);
+
+  --rule-hair:  color-mix(in srgb, #e9edf3 12%, transparent);
+  --rule-thin:  color-mix(in srgb, #e9edf3 22%, transparent);
+  --rule-mid:   color-mix(in srgb, #e9edf3 44%, transparent);
+  --rule-heavy: #e9edf3;
+
+  /* 어두운 지반에서 #cf1f14 / #1550b4 는 뭉개져 읽히지 않으므로
+     색상(hue)은 그대로 두고 밝기만 올렸다. 화면의 유일한 유채색이다. */
+  --c-up:   #ff5f4e;
+  --c-down: #5aa6ff;
+  --c-flat: var(--color-neutral-600);
+  --c-gain: #3fd07a;
+
+  --color-neutral-100: #14181e;
+  --color-neutral-200: #1c2128;
+  --color-neutral-300: #2a3038;
+  --color-neutral-400: #3d444e;
+  --color-neutral-500: #767e8a;
+  --color-neutral-600: #939ba6;
+  --color-neutral-700: #b3bac4;
+  --color-neutral-800: #cdd3db;
+  --color-neutral-900: #e9edf3;
+
+  --color-accent-100: #171c22;
+  --color-accent-200: #20262e;
+  --color-accent-300: #2f363f;
+  --color-accent-400: #444c57;
+  --color-accent-500: #7b838f;
+  --color-accent-600: #99a1ac;
+  --color-accent-700: #b8bfc9;
+  --color-accent-800: #d2d8e0;
+  --color-accent-900: #e9edf3;
+
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px color-mix(in srgb, #000 40%, transparent);
+  --shadow-lg: 0 18px 50px color-mix(in srgb, #000 62%, transparent),
+               0 0 0 1px color-mix(in srgb, #e9edf3 16%, transparent);
+
+  --color-canvas: #05070a;
+  --pop-scrim: rgba(0, 0, 0, .72);
+  /* 어두운 지반에서는 흰 그림자가 아니라 검정 그림자라야 끝이 보인다 */
+  --scroll-ink: rgba(0, 0, 0, .55);
+
+  color-scheme: dark;
+}
+
+/* 다크에서는 흰 글자가 더 굵어 보인다 — 획을 얇게 렌더링해 밝은 판본의 무게를 맞춘다 */
+:root[data-theme="dark"] body { -moz-osx-font-smoothing: grayscale; }
+
+/* ── 헤더의 판본 버튼 ────────────────────────────────────────────────────
+   자동 → 밝게 → 어둡게 를 돌려 가며 고른다. 크롬이므로 유채색은 안 쓴다. */
+.theme-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 26px; padding: 0 9px;
+  font-family: var(--font-body); font-size: 10px; font-weight: 600;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--c-dim); background: transparent;
+  border: 1px solid var(--rule-thin); border-radius: 0;
+  cursor: pointer; white-space: nowrap;
+}
+.theme-btn:hover { color: var(--color-text); border-color: var(--rule-mid); }
+.theme-btn svg { display: block; width: 12px; height: 12px; flex: none; }

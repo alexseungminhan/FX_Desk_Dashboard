@@ -219,6 +219,12 @@
     "h.ktb": { ko: "국고채", en: "KTB" },
     "h.spread": { ko: "스프레드", en: "Spread" },
     "h.kind": { ko: "구분", en: "Type" },
+    // 등락·거래 상위 표 머리 (app.js 의 rankHead)
+    "h.name": { ko: "종목명", en: "Name" },
+    "h.price": { ko: "주가", en: "Price" },
+    "h.chgpct": { ko: "등락률", en: "Change" },
+    "h.value": { ko: "거래대금", en: "Turnover" },
+    "h.volume": { ko: "거래량", en: "Volume" },
     "h.dayAmount": { ko: "당일 거래대금", en: "Turnover" },
     "h.bondType": { ko: "종류", en: "Bond Type" },
     "h.issueDate": { ko: "발행일", en: "Issued" },

@@ -23,6 +23,7 @@ from yfinance.data import YfData
 import bond_curve
 import bond_flow
 import bond_quotes
+import disk_cache
 import fx_bond_issue
 import fx_news
 import keyword_news
@@ -350,6 +351,12 @@ class MarketData:
         self.movers_updated_at: datetime | None = None
         self.kr_most_traded: list[dict] = []
         self.kr_most_traded_stale: bool = True
+        # 직전 영업일 순위를 대신 걸어 뒀을 때 그 세션 날짜 ("2026-08-26").
+        # None 이면 오늘 장중 값이다. 화면에 "08.26 기준" 을 적는 근거.
+        # 등락과 거래대금은 따로 갱신되므로(개장 직후 몇 초간 한쪽만 오늘 것이
+        # 되는 구간이 있다) 각자 들고 있는다.
+        self.movers_session: str | None = None
+        self.most_traded_session: str | None = None
         self.us_gainers: list[dict] = []
         self.us_losers: list[dict] = []
         self.us_most_active: list[dict] = []
@@ -373,6 +380,8 @@ class MarketData:
         self.bond_quotes: dict | None = None
         self.short_term_rates: dict | None = None
         self.reserve_drains: dict | None = None
+        # 바깥 소스가 죽어 직전 수집분을 대신 걸었을 때 그 날짜. None 이면 최신.
+        self.reserve_drains_session: str | None = None
 
     def all_symbols(self) -> list[str]:
         return list(FIXED_SYMBOLS)
@@ -710,17 +719,33 @@ class MarketData:
             return
         self.short_term_rates = data
 
-    def poll_reserve_drains(self) -> None:
-        """외환보유액 단기 유출예정액 (기재부 IMF 공표) — reserves_drains.py."""
+    def poll_reserve_drains(self) -> bool:
+        """외환보유액 단기 유출예정액 (기재부 IMF 공표) — reserves_drains.py.
+
+        받아왔으면 True. 실패하면 디스크에 떠 둔 직전 공표분으로 메우고
+        False 를 돌려 준다 — 부르는 쪽(main 의 재시도 루프)이 다시 올지
+        말지 정하는 근거다.
+
+        mods.go.kr 은 기동 때 열넷을 한꺼번에 때리면 곧잘 연결 타임아웃이
+        난다. 이 표는 월 1회 갱신이라 폴링이 주 1회인데, 그 한 번을 놓치면
+        다음 시도가 일주일 뒤라 그동안 패널이 통째로 비어 있었다."""
+        data = None
         try:
             data = reserves_drains.fetch_reserve_drains()
         except Exception:
-            log.exception("poll_reserve_drains failed — keeping last known table")
-            return
+            log.exception("poll_reserve_drains failed — 직전 공표분으로 메운다")
         if not data:
-            log.warning("poll_reserve_drains returned nothing — keeping last known table")
-            return
+            if not self.reserve_drains:
+                cached = disk_cache.load("reserve_drains", max_age_days=120)
+                if cached and cached.get("table"):
+                    self.reserve_drains = cached["table"]
+                    self.reserve_drains_session = cached.get("session")
+                    log.info("유출예정액을 직전 수집분(%s)으로 채웠다", self.reserve_drains_session)
+            return False
         self.reserve_drains = data
+        self.reserve_drains_session = None
+        disk_cache.save("reserve_drains", {"table": data})
+        return True
 
     def poll_movers(self) -> None:
         """Real KOSPI+KOSDAQ top gainers/losers from Naver Finance — see
@@ -731,14 +756,18 @@ class MarketData:
             log.exception("poll_movers failed — keeping last known ranking")
             return
         if not gainers and not losers:
-            # Both empty almost certainly means the scrape broke (site
-            # layout change, block, etc) rather than a real quiet market.
-            log.warning("poll_movers returned no rows — keeping last known ranking")
+            # 빈 표는 두 가지다 — 개장 전(네이버 장중 순위가 아직 안 열림)
+            # 이거나 스크랩이 깨졌거나. 어느 쪽이든 오늘 값이 없는 건 같으니
+            # 직전 영업일 확정치로 메운다 (없으면 지금 걸린 걸 그대로 둔다).
+            log.warning("poll_movers returned no rows — falling back to last session")
+            self._fill_rankings_from_cache("movers")
             return
         self.mover_gainers = gainers
         self.mover_losers = losers
         self.movers_stale = False
         self.movers_updated_at = datetime.now(tz=KST)
+        self.movers_session = None               # 오늘 장중 값으로 올라섰다
+        self._save_rankings_cache()
 
     def poll_kr_most_traded(self) -> None:
         """Real KOSPI+KOSDAQ top-by-trading-value from Naver Finance."""
@@ -748,10 +777,58 @@ class MarketData:
             log.exception("poll_kr_most_traded failed — keeping last known ranking")
             return
         if not rows:
-            log.warning("poll_kr_most_traded returned no rows — keeping last known ranking")
+            log.warning("poll_kr_most_traded returned no rows — falling back to last session")
+            self._fill_rankings_from_cache("most_traded")
             return
         self.kr_most_traded = rows
         self.kr_most_traded_stale = False
+        self.most_traded_session = None
+        self._save_rankings_cache()
+
+    # -- 직전 영업일 순위 (08:30~09:00 메우기) ----------------------------
+
+    def _save_rankings_cache(self) -> None:
+        """등락·거래대금이 **둘 다** 오늘 장중 값일 때만 디스크에 떠 둔다.
+
+        개장 직후에는 둘이 몇 초 어긋난다 — 등락만 먼저 올라선 순간에 저장하면
+        오늘 등락과 어제 거래대금이 한 파일에 섞여, 다음 날 아침에 서로 다른
+        날짜의 순위를 같은 날짜로 붙여 내보내게 된다."""
+        if self.movers_session is not None or self.most_traded_session is not None:
+            return
+        if not (self.mover_gainers and self.mover_losers and self.kr_most_traded):
+            return
+        disk_cache.save("kr_rankings", {
+            "gainers": self.mover_gainers,
+            "losers": self.mover_losers,
+            "mostTraded": self.kr_most_traded,
+        })
+
+    def _fill_rankings_from_cache(self, which: str) -> None:
+        """네이버가 빈 표만 줄 때 직전 영업일 확정치를 대신 건다.
+
+        `which` 는 "movers" | "most_traded" — 비어서 온 쪽만 채운다.
+        이미 값이 걸려 있으면(오늘 것이든 어제 것이든) 건드리지 않는다:
+        장중에 한 번 삐끗한 응답 때문에 화면이 어제로 되돌아가면 안 된다."""
+        if which == "movers" and (self.mover_gainers or self.mover_losers):
+            return
+        if which == "most_traded" and self.kr_most_traded:
+            return
+        cached = disk_cache.load("kr_rankings", max_age_days=5)
+        if not cached:
+            return
+        session = cached.get("session")
+        if which == "movers":
+            self.mover_gainers = cached.get("gainers") or []
+            self.mover_losers = cached.get("losers") or []
+            self.movers_session = session
+            # 어제 확정치는 "고장 나서 멈춘 값" 이 아니라 제대로 된 직전 종가다.
+            # 흐리게 처리하는 stale 대신 세션 날짜를 붙여 언제 것인지 밝힌다.
+            self.movers_stale = False
+        else:
+            self.kr_most_traded = cached.get("mostTraded") or []
+            self.most_traded_session = session
+            self.kr_most_traded_stale = False
+        log.info("국내 %s 순위를 직전 영업일(%s) 확정치로 채웠다", which, session)
 
     def poll_us_movers(self) -> None:
         """Real US day gainers/losers/most-active from Yahoo Finance's
@@ -1368,6 +1445,10 @@ class MarketData:
         return {
             "asOf": self.last_snapshot_at.isoformat() if self.last_snapshot_at else None,
             "moversAsOf": self.movers_updated_at.isoformat() if self.movers_updated_at else None,
+            # 국내 순위가 오늘 장중 값이 아니라 직전 영업일 확정치일 때만
+            # 날짜가 실린다 (개장 전 08:30~09:00). 화면이 오늘인 척하지 않게.
+            "moversSession": self.movers_session,
+            "mostTradedSession": self.most_traded_session,
             "ticker": ticker,
             "fxRegions": fx_regions,
             "indexGroups": index_groups,

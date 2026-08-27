@@ -52,6 +52,9 @@ DAILY_SOURCES_POLL_SECONDS = 1800
 # 중순에 올라온다. 실시간으로 볼 물건이 아니라 주 1회만 확인한다. 새 달
 # 수치가 늦어도 일주일 안에는 잡히고, 페이지 한 장이 130KB 라 부담도 없다.
 RESERVE_DRAINS_POLL_SECONDS = 7 * 24 * 3600
+# 실패해 직전 공표분을 걸어 놓은 동안에는 이 간격으로 다시 와 본다.
+# 월 1회 갱신되는 표라 자주 두드릴 이유가 없고, 소스도 느린 편이다.
+RESERVE_DRAINS_RETRY_SECONDS = 600
 
 # 국내 순위·수급 폴은 이 창(한국시간) 안에서만 돈다. 장 밖에서 매분 긁어 봐야
 # 같은 표를 다시 받을 뿐인데, 그게 대역폭의 대부분이었다 (24시간 x 3.7MB/분).
@@ -168,9 +171,12 @@ manager = ConnectionManager()
 
 
 def _colors_for(scheme: str) -> tuple[str, str, str]:
+    # 값이 아니라 토큰 이름을 내보낸다. 보드가 밝은 판/다크 판을 오가는데
+    # (frontend/styles.css), 서버가 #c0392b 를 박아 보내면 어두운 지반에서
+    # 뭉개져 안 읽힌다. 같은 이름이 판본마다 제 밝기로 풀리게 둔다.
     if scheme == "us":
-        return "#1a8a4a", "#c0392b", "#7a7a7d"  # up, down, flat
-    return "#c0392b", "#2f6fb0", "#7a7a7d"  # kr: up=red, down=blue
+        return "var(--c-gain)", "var(--c-up)", "var(--c-flat)"  # us: up=green, down=red
+    return "var(--c-up)", "var(--c-down)", "var(--c-flat)"  # kr: up=red, down=blue
 
 
 async def _price_loop() -> None:
@@ -292,15 +298,19 @@ async def _daily_sources_loop() -> None:
 
 
 async def _reserve_drains_loop() -> None:
-    """외환보유액 IMF 공표 표 II — 월 1회 갱신이라 주 1회만 본다.
+    """외환보유액 IMF 공표 표 II — 월 1회 갱신이라 성공했으면 주 1회만 본다.
 
-    프로세스가 일주일 넘게 살아 있어야 두 번째 수집이 돈다. 재기동이 잦으면
-    사실상 기동 시 시드 한 번이 전부인데, 월 1회 갱신이라 그래도 맞는다."""
+    다만 mods.go.kr 은 기동 때 곧잘 연결 타임아웃이 난다. 주기가 일주일이라
+    그 한 번을 놓치면 다음 시도가 일주일 뒤였고, 그동안 패널에는 "불러오지
+    못했습니다" 만 떠 있었다. 실패한 동안에는 짧게 끊어 다시 와서, 소스가
+    돌아오는 즉시 화면이 채워지게 한다."""
     while True:
-        await asyncio.sleep(RESERVE_DRAINS_POLL_SECONDS)
+        got = bool(market.reserve_drains) and market.reserve_drains_session is None
+        await asyncio.sleep(RESERVE_DRAINS_POLL_SECONDS if got else RESERVE_DRAINS_RETRY_SECONDS)
         try:
-            await asyncio.to_thread(market.poll_reserve_drains)
-            await manager.broadcast()
+            ok = await asyncio.to_thread(market.poll_reserve_drains)
+            if ok:
+                await manager.broadcast()
         except Exception:
             log.exception("reserve drains loop iteration failed")
 

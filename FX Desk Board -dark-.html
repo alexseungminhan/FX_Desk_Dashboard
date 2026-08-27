@@ -1,0 +1,1395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>[다크] FX DESK. Market Board — 디자인 목업</title>
+
+<!--
+  디자인 검토용 정지 화면. 실제 보드(FX Desk Board.html + frontend/app.js)의
+  메인화면을 그대로 옮겨 놓되, WebSocket 으로 들어오던 값을 예시 숫자로
+  박아 넣었다. 스크립트가 하나도 없어 파일 하나로 열린다.
+
+  · CSS 는 frontend/styles.css 와 원본 페이지의 <style> 을 그대로 넣었다.
+    디자인을 고칠 때는 이 두 블록을 고치고 원본에 되옮기면 된다.
+  · 숫자·종목·뉴스 문구는 전부 예시다. 실제 시세가 아니다.
+  · "주식 수급" 아래 패널들은 메인화면 기본값대로 접혀 있다.
+-->
+
+<style>
+/* Industry — design-system tokens, 신문 시세면 판본.
+   여백이 아니라 괘선 굵기 3단(hair / thin / mid / heavy)과 타입 스케일로
+   위계를 만든다. 색은 두 벌로 갈라 둔다 — 데이터(상승 빨강/하락 파랑)와
+   크롬(잉크·회색뿐, 유채색 없음). 둘이 절대 겹치지 않는다. */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Gothic+A1:wght@400;500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  /* 다크 — 밝은 판본을 지반만 뒤집었다. 규칙은 같다:
+     유채색은 데이터(빨강/파랑)만 갖고, 크롬은 값(明度)으로만 위계를 만든다. */
+  --color-bg: #0d1014;                 /* 순검정 아님 — 찬 무연탄 */
+  --color-surface: #171b21;
+  --color-text: #e9edf3;               /* 순백 아님 — 형광 눈부심을 줄인다 */
+  --color-accent: #e9edf3;             /* 지문(紙紋) 색과 동일. 유채색 액센트 없음 */
+  --color-divider: color-mix(in srgb, #e9edf3 22%, transparent);
+
+  /* 괘선 4단 — 이 화면의 구분은 전부 이 네 값으로 한다 */
+  --rule-hair:  color-mix(in srgb, #e9edf3 12%, transparent);
+  --rule-thin:  color-mix(in srgb, #e9edf3 22%, transparent);
+  --rule-mid:   color-mix(in srgb, #e9edf3 44%, transparent);
+  --rule-heavy: #e9edf3;
+
+  /* 데이터 색 — 한국 시장 관습. 상승 빨강 / 하락 파랑. 뒤집지 않는다.
+     어두운 지반에서 #cf1f14 / #1550b4 는 뭉개져 읽히지 않으므로
+     색상(hue)은 그대로 두고 밝기만 올렸다. 이 둘이 화면의 유일한 유채색이다. */
+  --c-up:   #ff5f4e;
+  --c-down: #5aa6ff;
+
+  /* 뉴트럴 램프 — 밝은 판본과 번호가 뜻하는 바가 같다:
+     100 = 지반에 가장 가까움, 900 = 가장 멂. 지반이 어두우므로 방향만 뒤집힌다. */
+  --color-neutral-100: #14181e;
+  --color-neutral-200: #1c2128;
+  --color-neutral-300: #2a3038;
+  --color-neutral-400: #3d444e;
+  --color-neutral-500: #767e8a;
+  --color-neutral-600: #939ba6;
+  --color-neutral-700: #b3bac4;
+  --color-neutral-800: #cdd3db;
+  --color-neutral-900: #e9edf3;
+
+  /* 액센트 램프 — 무채색. 강조는 색이 아니라 값(明度)으로 한다 */
+  --color-accent-100: #171c22;
+  --color-accent-200: #20262e;
+  --color-accent-300: #2f363f;
+  --color-accent-400: #444c57;
+  --color-accent-500: #7b838f;
+  --color-accent-600: #99a1ac;
+  --color-accent-700: #b8bfc9;
+  --color-accent-800: #d2d8e0;
+  --color-accent-900: #e9edf3;
+
+  /* 역할 이름 — 쓰는 쪽에서 "몇 번 회색"이 아니라 용도로 고른다 */
+  --c-label: var(--color-neutral-500);   /* 표 머리·캡션·타임스탬프 */
+  --c-dim:   var(--color-neutral-600);   /* 보조 텍스트 */
+  --c-sub:   var(--color-neutral-700);   /* 본문 다음 단계 */
+  --c-empty: var(--color-neutral-400);   /* 값 없음(—) */
+
+  /* 라틴 + 한글을 한 벌로 묶는다 — 한글이 OS 고딕으로 떨어지지 않게 */
+  --font-heading: "Bricolage Grotesque", "Gothic A1", system-ui, sans-serif;
+  --font-heading-weight: 700;
+  --font-body: "Public Sans", "IBM Plex Sans KR", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "IBM Plex Sans KR", ui-monospace, monospace;
+
+  --space-1: 3px;
+  --space-2: 6px;
+  --space-3: 9px;
+  --space-4: 12px;
+  --space-6: 18px;
+  --space-8: 24px;
+
+  /* 모서리는 전부 직각 — 계기판에 둥근 카드는 없다 */
+  --radius-sm: 0;
+  --radius-md: 0;
+  --radius-lg: 0;
+
+  --shadow-sm: none;
+  --shadow-md: 0 2px 6px color-mix(in srgb, #000 40%, transparent);
+  --shadow-lg: 0 18px 50px color-mix(in srgb, #000 62%, transparent),
+               0 0 0 1px color-mix(in srgb, #e9edf3 16%, transparent);
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+h1, h2, h3, h4 { font-family: var(--font-heading); font-weight: var(--font-heading-weight); }
+
+/* 카드를 버렸으므로 .blueprint 는 상자가 아니라 "구획을 여는 괘선"이다.
+   모서리 십자(.corner)는 중간에 남기지 않고 통째로 걷었다. */
+.blueprint {
+  position: relative;
+  border: 0;
+  border-top: 1px solid var(--rule-mid);
+  border-radius: 0;
+}
+.blueprint > .corner { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Components — built with the tokens above. Plain CSS on plain HTML.
+   ══════════════════════════════════════════════════════════════════════ */
+
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; font-size: 12px; line-height: 1.5; font-weight: 400;
+       -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading); font-weight: var(--font-heading-weight);
+  line-height: 1.1; letter-spacing: -0.02em; margin: 0 0 var(--space-2);
+  word-break: keep-all;
+}
+h1 { font-size: 46px; }
+h2 { font-size: 34px; }
+h3 { font-size: 25px; }
+h4 { font-size: 17px; letter-spacing: -0.015em; }
+h5 { font-size: 14px; }
+h6 { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; }
+p { margin: 0 0 var(--space-3); }
+a { color: var(--color-text); text-decoration: none; text-underline-offset: 3px; }
+a:hover { color: var(--color-text); text-decoration: underline; }
+.text-muted { color: var(--c-dim); }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 1px; }
+::selection { background: var(--color-accent-200); }
+
+/* — buttons — */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; text-decoration: none;
+  font-family: var(--font-body); font-weight: 600;
+  font-size: 11.5px; line-height: 1.2; letter-spacing: 0.04em;
+  color: var(--color-text);
+  background: transparent; border: 1px solid var(--rule-thin);
+  padding: 5px var(--space-3);
+  border-radius: 0;
+}
+.btn svg { display: block; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-secondary { border-color: var(--rule-thin); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 6%, transparent); }
+.btn-secondary:active { background: color-mix(in srgb, var(--color-text) 12%, transparent); }
+
+/* — forms — 상자가 아니라 기입선 하나 — */
+.input {
+  width: 100%; min-height: 28px; padding: 4px 2px; font: inherit;
+  font-size: 12px; color: var(--color-text); caret-color: var(--color-accent);
+  background: transparent;
+  border: 0; border-bottom: 1px solid var(--rule-thin); border-radius: 0;
+}
+.input::placeholder { color: var(--color-neutral-400); }
+.input:hover { border-bottom-color: var(--rule-mid); }
+.input:focus-visible { border-bottom-color: var(--color-accent); outline: none;
+  box-shadow: 0 1px 0 0 var(--color-accent); }
+.seg-opt input {
+  position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;
+}
+.seg {
+  display: inline-flex; overflow: hidden;
+  border: 1px solid var(--rule-thin); border-radius: 0;
+}
+.seg-opt {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 11px; font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+  color: var(--c-sub); cursor: pointer;
+}
+.seg-opt + .seg-opt { border-left: 1px solid var(--rule-thin); }
+/* 선택된 탭은 액센트가 아니라 잉크로 채운다 — 황토는 구획 표시 전용 */
+.seg-opt:has(input:checked) { background: var(--color-text); color: var(--color-bg); }
+.seg-opt:not(:has(input:checked)):hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.seg-opt:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+/* — tags — 알약이 아니라 왼쪽 괘선 하나로 붙인다 — */
+.tag {
+  display: inline-flex; align-items: center;
+  font-size: 9.5px; font-weight: 600; letter-spacing: 0.08em;
+  padding: 0 0 0 6px; border-radius: 0;
+  border-left: 2px solid var(--color-accent);
+}
+.tag-accent { background: transparent; color: var(--c-dim); }
+.tag-outline { border: 1px solid var(--color-accent); color: var(--color-accent-700); padding: 1px 6px; }
+
+/* — navigation — */
+.nav {
+  display: flex; align-items: center; gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: none;
+}
+.nav-brand {
+  font-family: var(--font-heading); font-weight: 700;
+  font-size: 20px; letter-spacing: -0.03em; margin-right: auto;
+}
+.nav a { color: inherit; text-decoration: none; font-size: 12px; }
+.nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
+
+/* — 직각 원칙 — */
+.btn, .input, .tag, .seg { border-radius: 0; }
+
+/* — FX Desk Board page-specific rules — */
+html, body { margin: 0; background: #05070a; font-family: var(--font-body); }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+        font-feature-settings: "tnum" 1; letter-spacing: -0.02em; }
+.kop { color: var(--color-neutral-600); letter-spacing: .16em; text-transform: uppercase;
+       font-family: var(--font-body); font-weight: 600; }
+.stale-dot { opacity: .45; }
+.conn-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 10px;
+              letter-spacing: .08em; text-transform: uppercase; color: var(--c-dim); }
+.conn-dot { width: 6px; height: 6px; border-radius: 0; background: #e9edf3; }
+.conn-dot.down { background: var(--c-up); }
+.conn-dot.connecting { background: var(--color-accent); }
+
+/* — clickable rows (open detail popups) — */
+.clickable-row { cursor: pointer; }
+.clickable-row:hover { background: color-mix(in srgb, var(--color-text) 9%, transparent); }
+.clickable-row:focus-visible { outline: 1px solid var(--color-accent); outline-offset: -1px; }
+
+/* — 상세 팝업 (popup.html 디자인: 종목/지표 공용) — */
+.pop-backdrop{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.72);display:flex;align-items:flex-start;justify-content:center;padding:44px 20px;overflow-y:auto}
+.pop-backdrop[hidden]{display:none}
+html.modal-open, html.modal-open body{overflow:hidden}
+.pop{width:100%;max-width:720px;background:var(--color-bg);padding:18px 20px 16px;position:relative;box-shadow:var(--shadow-lg);border-top:3px solid var(--rule-heavy);font-family:var(--font-body);color:var(--color-text)}
+.pop .mono{font-family:var(--font-mono)}
+
+.pop-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.pop-title-row{display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.pop-name{font-family:var(--font-heading);font-weight:700;font-size:24px;letter-spacing:-.02em}
+.pop-code{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--c-label)}
+.pop-px-row{display:flex;align-items:baseline;gap:11px;margin-top:7px;flex-wrap:wrap}
+.pop-px{font-size:40px;font-weight:400;line-height:1;letter-spacing:-.035em}
+.pop-chg{font-size:14px}
+.pop-asof{font-size:10px;color:var(--c-label);letter-spacing:.08em}
+.pop-x{flex:none;width:26px;height:26px;border:1px solid var(--rule-thin);background:transparent;color:var(--c-dim);font-size:12px;line-height:1;cursor:pointer;font-family:var(--font-body)}
+.pop-x:hover{background:var(--color-text);color:var(--color-bg)}
+
+.pop-chart-box{margin-top:14px;padding:10px 0 6px;background:transparent;border-top:1px solid var(--rule-thin);border-bottom:1px solid var(--rule-thin);position:relative}
+.pop-chart-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.pop-chart-label{font-size:9.5px;color:var(--c-label);letter-spacing:.18em;text-transform:uppercase}
+.pop-range{display:flex;border:1px solid var(--rule-thin)}
+.pop-range button{font-family:var(--font-mono);font-size:10px;letter-spacing:.04em;padding:3px 8px;border:0;border-left:1px solid var(--rule-thin);background:transparent;color:var(--c-sub);cursor:pointer}
+.pop-range button:first-child{border-left:0}
+.pop-range button:hover{background:color-mix(in srgb,var(--color-text) 7%,transparent)}
+.pop-range button[aria-pressed="true"]{background:var(--color-text);color:var(--color-bg)}
+.pop-chart{display:block;width:100%;height:132px}
+.pop-axis{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:9.5px;color:var(--c-label);margin-top:2px}
+
+.pop-stats{margin-top:13px;display:grid;grid-template-columns:repeat(3,1fr);gap:0 18px}
+.pop-stats .stat{display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px dotted var(--rule-hair)}
+.pop-stats .stat span{font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--c-label)}
+.pop-stats .stat b{font-family:var(--font-mono);font-size:12.5px;font-weight:500}
+
+.pop-sec-label{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);font-weight:700;margin-bottom:6px}
+.pop-news{margin-top:15px}
+.pop-news-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:5px 0;border-top:1px dotted var(--rule-hair)}
+.pop-news-row a{font-size:12.5px;line-height:1.4;color:var(--color-text);text-decoration:none;text-wrap:pretty}
+.pop-news-row a:hover{color:var(--color-accent-700);text-decoration:underline}
+.pop-news-row span{font-family:var(--font-mono);font-size:10px;color:var(--c-label);white-space:nowrap}
+
+.pop-foot{margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pop-source{font-family:var(--font-mono);font-size:9.5px;color:var(--c-label);letter-spacing:.04em}
+.pop-actions{display:flex;gap:8px}
+.pop-actions .btn{padding:6px 14px;position:relative}
+
+@media (max-width:640px){
+  .pop-backdrop{padding:10px}
+  .pop{padding:14px 14px 12px;max-width:100%}
+  .pop-stats{grid-template-columns:repeat(2,1fr)}
+  .pop-name{font-size:20px}.pop-px{font-size:30px}
+}
+
+</style>
+
+<style>
+  /* ── 페이지 전용 ─────────────────────────────────────────────────────
+     관점: 신문 시세면. 카드를 걷어내고 괘선과 활자 크기만으로 구분한다.
+     디스플레이 활자는 제목이 아니라 숫자다(티커 30~40px : 본문 12px). */
+
+  /* 시트 — 가운데 한 칼럼(1180px)을 풀고 폭을 넓혔다 */
+  .page-pad > .blueprint { border-top: 3px solid var(--rule-heavy); }
+  .panel { padding: 13px 0 18px; background: transparent; }
+
+  /* 짝 패널은 사이를 여백이 아니라 세로 괘선으로 가른다 */
+  .row-pair > .blueprint:first-child { padding-right: 26px; }
+  .row-pair > .blueprint + .blueprint { padding-left: 26px; border-left: 1px solid var(--rule-thin); }
+
+  /* 제목 위계 3단: 머리기사(환율) 26px · 구획 17px · 색인 13px */
+  .page-pad > .blueprint > div > h4 { font-size: 26px; }
+  .panel > .panel-head > h4, .panel > h4 { line-height: 1.15; }
+  h4 .kop { font-weight: 600; }
+
+  /* 표 리듬 — 시세 행은 점선, 구획 머리만 실선 */
+  .fx-row,.mv-row{display:grid;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
+  .fx-row{grid-template-columns:auto 1fr auto;gap:9px}
+  .fx-pair{font-size:12px;font-weight:500;white-space:nowrap;letter-spacing:-.005em}
+  .fx-px{font-size:13.5px;font-weight:500;text-align:right}
+  .fx-pct{font-size:11px;text-align:right;min-width:60px}
+  .mv-row{grid-template-columns:20px 1fr auto auto;gap:8px;cursor:default}
+  .mv-rank{font-size:10px;color:var(--c-label);text-align:right}
+  /* 상위 3위는 순위 숫자에만 액센트를 준다 — 값 색(빨강/파랑)과 겹치지 않는 자리 */
+  .mv-row:nth-child(-n+3) .mv-rank,.mt-row:nth-child(-n+3) .mv-rank{color:var(--color-accent);font-weight:700}
+  /* ETF 이름은 "KODEX 미국S&P500레버리지(합성 H)" 처럼 길다 — 말줄임으로 자르면
+     어느 종목인지 알 수가 없으니 끝까지 내보내고, 넘치면 목록을 가로로 민다
+     (아래 .mv-list 와 감싸고 있는 .scroll-x). */
+  .mv-name{font-size:12px;font-weight:500;white-space:nowrap}
+  .mv-px{font-size:12px;text-align:right;color:var(--c-sub)}
+  .mv-pct{font-size:11.5px;text-align:right;min-width:58px}
+  .mt-row{display:grid;grid-template-columns:20px 1fr auto auto auto;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
+  /* 목록 폭을 가장 긴 행에 맞춘다 — 행 하나하나가 따로 격자라, 목록이
+     max-content 로 넓어져야 이름이 안 잘리고 짧은 행도 같은 폭으로 늘어난다. */
+  .mv-list{width:max-content;min-width:100%}
+  /* 짝수 행 옅은 바탕 — 눈이 가로로 미끄러지지 않게 하는 시세면 장치 */
+  .mv-list .mv-row:nth-child(even),.mv-list .mt-row:nth-child(even){background:color-mix(in srgb,var(--color-text) 3.5%,transparent)}
+  .mt-vol{font-size:12px;text-align:right;min-width:66px;font-weight:600}
+  /* ETF·ETN은 개별종목과 나란히 랭킹되므로 이름 옆에 종류를 표시한다 */
+  .mv-tag{font-size:8.5px;font-weight:700;letter-spacing:.08em;color:var(--c-dim);border:1px solid var(--rule-thin);padding:0 3px;margin-left:5px;vertical-align:1.5px}
+  /* 수급: 투자자(행) × 기간(열) 표 */
+  .flow-row{display:grid;grid-template-columns:64px repeat(4,1fr);gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
+  .flow-name{font-size:12px;font-weight:500;white-space:nowrap}
+  .flow-val{font-size:12px;text-align:right}
+  /* 기관 세부(금융투자·투신·연기금…)는 기관계 하위 항목이라 들여쓴다 */
+  .flow-sub .flow-name{padding-left:10px;font-weight:400;color:var(--c-sub)}
+  .flow-sub{border-bottom-color:transparent}
+  /* 베이시스 — 한 행을 다 쓰므로 지표를 세로 목록이 아니라 가로로 편다 */
+  .bs-big{display:flex;align-items:baseline;gap:10px;padding:2px 0 10px;border-bottom:1px solid var(--rule-thin)}
+  .bs-big b{font-size:36px;font-weight:400;letter-spacing:-.035em}
+  .bs-tag{font-size:9.5px;font-weight:700;letter-spacing:.1em;border:1px solid currentColor;padding:1px 5px}
+  .bs-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px 26px;padding-top:10px}
+  .bs-stat{display:flex;flex-direction:column;gap:1px}
+  .bs-stat span{font-size:9.5px;color:var(--c-label);letter-spacing:.14em;text-transform:uppercase}
+  .bs-stat b{font-size:15px;font-weight:500}
+  /* 채권 수급은 "자산운용(공모)" 처럼 라벨이 길어 첫 열을 넓게 잡는다 */
+  .bflow-row{grid-template-columns:110px repeat(4,1fr)}
+  /* grid·flex 자식은 기본이 min-width:auto 라 내용이 넓으면 칸 자체가
+     늘어난다. 이걸 안 풀면 아래 .scroll-x 가 스크롤을 못 하고 패널이
+     통째로 넓어져 페이지가 가로로 밀린다. */
+  .blueprint,.scroll-x{min-width:0}
+  .scroll-x{overflow-x:auto;overscroll-behavior-x:contain}
+  /* 표 머리 — 여덟 종류의 표가 저마다 되풀이하던 선언을 하나로 모은다. */
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,.flow-head,.cv-head{
+    border-bottom:1px solid var(--rule-mid);padding-bottom:5px}
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,
+  .flow-head span,.cv-head span{font-size:9.5px;color:var(--c-label);letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+  .flow-head span,.cv-head span{text-align:right}
+  .flow-head span:first-child,.cv-head span:first-child{text-align:left}
+
+  /* 가로 스크롤이 있다는 신호.
+     안쪽 두 겹(background-attachment:local)은 내용에 붙어 같이 밀려나고,
+     바깥 두 겹(scroll)은 칸에 고정된다. 밀 수 있을 때만 그 방향 끝에
+     그림자가 드러난다 — JS 없이 넘칠 때만 뜬다. */
+  .scroll-x, #ticker-strip{
+    background-image:
+      linear-gradient(to right,  var(--scroll-shadow-bg, var(--color-bg)) 40%, transparent),
+      linear-gradient(to left,   var(--scroll-shadow-bg, var(--color-bg)) 40%, transparent),
+      linear-gradient(to right,  rgba(0,0,0,.55), transparent),
+      linear-gradient(to left,   rgba(0,0,0,.55), transparent);
+    background-position:left center,right center,left center,right center;
+    background-repeat:no-repeat;
+    background-size:32px 100%,32px 100%,10px 100%,10px 100%;
+    background-attachment:local,local,scroll,scroll;
+  }
+  #ticker-strip{--scroll-shadow-bg:var(--color-bg)}
+  /* 티커 띠 = 이 화면의 머리기사. 셀은 세로 괘선으로만 갈린다 */
+  #ticker-strip > div{border-right-color:var(--rule-hair) !important}
+  /* USD/KRW 한 칸만 디스플레이 크기로 세운다 — 데스크가 곁눈질로 찾는 값 */
+  /* flex-grow 는 여유 공간이 있을 때만 커진다 — 띠는 이미 넘치므로 모든 칸이
+     min-width 로 주그러들고 1.7 이 무력해진다. 34px 숫자가 들어갈 폭을
+     min-width 로 직접 못박는다. */
+  #ticker-strip > div:nth-child(5){flex:1.7 !important;min-width:206px !important;background:var(--color-surface)}
+  #ticker-strip > div:nth-child(5) > span:nth-child(1){color:var(--color-accent) !important}
+  #ticker-strip > div:nth-child(5) > span:nth-child(2){font-size:34px !important;letter-spacing:-.045em}
+  /* 탭이 많은 세그먼트(채권종류 9개·커브 7개)도 같은 이유로 넘친다 */
+  .seg-nowrap{overflow-x:auto;max-width:100%}
+  #flow-table,#bflow-table{min-width:660px}
+  #flow-chart,#bflow-chart{min-width:1000px}
+  #custody-chart{min-width:1040px}
+  #quotes-list{min-width:700px}
+  #curve-table{min-width:900px}
+  #curve-chart{min-width:860px}
+  #strate-table{min-width:780px}
+  #drain-table{min-width:680px}
+  #fxbond-list{min-width:840px}
+  .seg-nowrap .seg-opt span{white-space:nowrap}
+  /* 탭은 좁은 칸에서도 낱글자로 접히지 않는다 */
+  .seg-opt{white-space:nowrap}
+  .panel-head .seg{flex:none}
+  .panel-head > h4{min-width:0}
+  /* 환율·지수 지역 칼럼 — 여백이 아니라 세로 괘선으로 가른다 */
+  #fx-regions > div, #idx-main > div{padding:0 30px}
+  #fx-regions > div:first-child, #idx-main > div:first-child{padding-left:0}
+  #fx-regions > div:last-child, #idx-main > div:last-child{padding-right:0}
+  #fx-regions > div + div, #idx-main > div + div{border-left:1px solid var(--rule-thin)}
+  /* 채권 커브: 종류(행) × 만기(열). 국고채 행만 굵게 세워 기준선을 만든다 */
+  .cv-row{display:grid;grid-template-columns:104px repeat(8,1fr);gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair)}
+  .cv-name{font-size:12px;white-space:nowrap}
+  .cv-base .cv-name{font-weight:700}
+  .cv-base{border-bottom:1px solid var(--rule-mid)}
+  .cv-val{font-size:12px;text-align:right}
+  /* 국고채 대비 스프레드는 값 아래 작게 — 레벨과 폭을 한 칸에서 같이 읽는다 */
+  .cv-val small{display:block;font-size:9.5px;color:var(--c-label);font-weight:400}
+  /* 지표종목 최종호가: 종목 | 잔존 | 수익률 | 전일대비 | 연중레인지 */
+  .q-row{display:grid;grid-template-columns:1.2fr 1fr 84px 92px 1fr;gap:10px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .q-num{text-align:right}
+  /* 원화 스왑: 만기 | SMBS Bid/Offer/Mid/연율 | KMB Bid/Offer/Mid/연율.
+     칸 사이 gap 을 없애고 셀 안쪽 padding 으로 벌린다 — 중개사 묶음의
+     바탕색이 끊기지 않고 한 덩어리로 보여야 구분이 된다. */
+  .sw-row{display:grid;grid-template-columns:56px repeat(8,1fr);align-items:center;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .sw-row > span{padding:3px 7px}
+  .sw-row > span:first-child{padding-left:0}
+  /* 중개사 구획: 바탕 대신 세로 괘선으로만 묶는다 — 색은 데이터에만 쓴다 */
+  .sw-s{background:color-mix(in srgb,var(--color-text) 3.5%,transparent)}
+  .sw-k{background:transparent}
+  .sw-s.sw-edge-l{border-left:1px solid var(--rule-thin)}
+  .sw-s.sw-edge-r{border-right:1px solid var(--rule-thin)}
+  .sw-k.sw-edge-l{border-left:1px solid var(--rule-thin)}
+  .sw-k.sw-edge-r{border-right:1px solid var(--rule-thin)}
+  /* 중개사 이름 띠 — 어느 묶음이 누구 고시인지 표 위에서 못박는다 */
+  .sw-grouphead{border-bottom:0}
+  .sw-grouphead > span:nth-child(2){grid-column:2/span 4}
+  .sw-grouphead > span:nth-child(3){grid-column:6/span 4}
+  .sw-grp{text-align:left;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;padding:3px 7px !important}
+  .sw-grp.sw-s{color:var(--c-sub);border-top:1px solid var(--rule-mid)}
+  .sw-grp.sw-k{color:var(--c-sub);border-top:1px solid var(--rule-mid)}
+  .ic-row,.bi-row{display:grid;grid-template-columns:70px repeat(3,1fr);gap:10px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .sw-num{text-align:right}
+  #swap-table{min-width:700px}
+  #irscrs-table,#bondirs-table{min-width:480px}
+  /* FX-implied 원화금리·CCS 베이시스:
+     basis 만 부호가 뜻을 가지므로 왼쪽에 칸막이를 세워 레벨 칸들과
+     갈라 놓는다 — 눈이 "여기부터가 결론"으로 읽게 한다. */
+  .fi-row{display:grid;grid-template-columns:52px 44px repeat(5,1fr);align-items:center;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .fi-row > span{padding:3px 6px}
+  .fi-row > span:first-child{padding-left:0}
+  .fi-row > span:last-child{border-left:1px solid var(--rule-mid)}
+  .fi-head{font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--c-label);font-weight:600}
+  /* 보간으로 만든 행은 값 자체가 추정이라 표 안에서 티가 나야 한다 */
+  .fi-interp{background:var(--color-accent-100)}
+  .fi-flag{display:inline-block;font-size:8.5px;letter-spacing:.08em;font-weight:700;
+           color:var(--color-accent-700);border:1px solid var(--color-accent-400);border-radius:0;
+           padding:0 3px;margin-left:4px;vertical-align:1.5px}
+  /* 6M 보간 방식별 값 — 하나를 고르는 게 아니라 폭을 보여주는 줄 */
+  .fi-variants{display:flex;flex-wrap:wrap;gap:3px 14px;font-size:10.5px;
+               color:var(--c-label);padding:6px 0 0}
+  .fi-warn{font-size:10.5px;line-height:1.5;color:var(--c-label);padding-top:6px}
+  .fi-warn div{padding-left:11px;text-indent:-11px}
+  .fi-warn div::before{content:"▸ ";color:var(--color-accent)}
+  #fximplied-table{min-width:660px}
+  /* 단기금융시장 금리: 구분 | 만기 5구간 | 거래대금 */
+  .st-row{display:grid;grid-template-columns:96px repeat(5,1fr) 92px;gap:8px;align-items:center;padding:3px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .st-num{text-align:right}
+  /* 외환보유액 단기 유출예정액(IMF 표 II): 구분 | 잔존만기 4구간.
+     칸 사이 gap 을 쓰지 않고 셀 안쪽 padding 으로 벌린다 — 강조 행의 바탕색이
+     칸 사이에서 끊기지 않고 한 줄로 이어져야 한다. */
+  .rd-row{display:grid;grid-template-columns:262px repeat(4,1fr);align-items:center;
+          border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .rd-row > span{padding:3px 8px}
+  .rd-num{text-align:right}
+  /* 한글은 기본값이 아무 데서나 끊기므로 띄어쓰기에서만 접히게 한다. */
+  .rd-name{padding-left:0 !important;word-break:keep-all;line-height:1.4}
+  .rd-top .rd-name{font-weight:700}
+  .rd-sub .rd-name{text-indent:11px;font-weight:400;color:var(--c-sub)}
+  .rd-sub{border-bottom-color:transparent}
+  /* 2-(b) 당국 선물환 매수 잔액 — 이 표에서 데스크가 실제로 보는 한 줄.
+     형광펜 대신 액센트(황토) 왼쪽 막대 + 옅은 바탕. 데이터 색과 안 겹친다. */
+  .rd-hi{background:var(--color-neutral-200);border-bottom:1px solid var(--rule-mid)}
+  .rd-hi .rd-name{font-weight:700;color:var(--color-text);box-shadow:inset 3px 0 0 var(--color-accent)}
+  /* 외화표시채 발행. 행마다 grid 가 따로라 폭을 전부 못박는다 */
+  .fb-row{display:grid;grid-template-columns:58px 1.1fr 1.5fr 46px 108px 62px 62px;gap:10px;align-items:center;padding:4px 0;border-bottom:1px dotted var(--rule-hair);font-size:12px}
+  .fb-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .fb-row > span{min-width:0}
+  .fb-cur{white-space:nowrap;overflow:hidden}
+  .fb-num{text-align:right;white-space:nowrap;overflow:hidden}
+  /* 뉴스 목록 — 목록 전체를 하나의 격자로 잡아 첫 열 폭을 가장 긴 시각에
+     맞추면 모든 제목이 같은 자리에서 시작한다. */
+  .nws-list{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:13px}
+  .nws-list > *{border-bottom:1px dotted var(--rule-hair)}
+  .nws-when{font-size:10px;color:var(--c-label);white-space:nowrap;padding:7px 0 6px}
+  .nws-body{font-size:12.5px;line-height:1.45;text-wrap:pretty;word-break:keep-all;padding:6px 0;min-width:0}
+  /* 키워드 뉴스 */
+  .kwn-row{display:grid;grid-template-columns:52px 1fr;gap:13px;padding:5px 0;border-bottom:1px dotted var(--rule-hair);align-items:baseline}
+  .kwn-when{font-size:10px;color:var(--c-label);white-space:nowrap}
+  .kw-wrap{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:9px}
+  .kw-chip{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;padding:2px 7px;border:1px solid var(--color-accent);color:var(--color-accent-700);background:transparent;letter-spacing:.02em}
+  .kw-chip button{border:0;background:none;color:inherit;cursor:pointer;font-size:12px;line-height:1;padding:0}
+  .kw-chip button:hover{color:var(--c-up)}
+  /* 상승 = 빨강, 하락 = 파랑 */
+  .up{color:var(--c-up)}
+  .dn{color:var(--c-down)}
+
+  /* — 접히는 패널 —
+     주식 수급 아래로는 늘 띄워 놓고 보는 시세가 아니라 필요할 때 펴 보는
+     자료다. 기본은 접힘이고, 편 패널은 localStorage 에 남는다.
+     접힌 열 개는 위계의 맨 아래 단 — 시세면 뒤쪽 "색인"처럼 한 줄씩 쌓는다. */
+  .pnl-head{cursor:pointer;user-select:none}
+  .pnl-head .seg,.pnl-head input{cursor:auto}
+  .pnl-head .seg-opt{cursor:pointer}
+  /* 제목 앞 꺾쇠 — 정사각형의 두 변을 45° 돌려 그린다 */
+  .pnl-caret{display:inline-block;width:7px;height:7px;margin-right:9px;
+             border-right:2px solid var(--color-accent);border-bottom:2px solid var(--color-accent);
+             vertical-align:middle;transform:translateY(-2px) rotate(-45deg);
+             transition:transform .18s ease,border-color .15s ease}
+  .panel.open .pnl-caret{transform:translateY(-3px) rotate(45deg)}
+  .pnl-head:hover .pnl-caret{border-color:var(--color-text)}
+  .collapsible:not(.open) .pnl-head .seg{display:none}
+  /* 접힌 패널: 색인 한 줄. 위아래 음수 마진으로 붙여 표처럼 쌓는다 */
+  .collapsible:not(.open){border-top:1px dotted var(--rule-thin);padding:0}
+  .collapsible:not(.open) > .pnl-head{padding:6px 0}
+  .collapsible:not(.open) h4{font-size:13px;font-weight:600;line-height:1.35}
+  .collapsible:not(.open) .kop{font-size:10px !important}
+  .collapsible:not(.open):hover{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  /* 펴진 패널은 색인에서 빠져나와 구획 대접을 받는다 */
+  .collapsible.open{border-top:1px solid var(--rule-mid);margin-top:20px}
+  /* 0fr → 1fr 로 늘리면 내용 높이를 미리 몰라도 애니메이션이 된다 */
+  .panel-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .22s ease}
+  .panel.open > .panel-body{grid-template-rows:1fr}
+  .panel-body > div{overflow:hidden;min-height:0}
+  /* 접혔을 때 제목 아래 여백이 남으면 빈 줄이 하나 붙은 것처럼 보인다. */
+  .collapsible:not(.open) > .pnl-head{margin-bottom:0 !important}
+
+  /* — 모바일 대응: 인라인 그리드를 좁은 화면에서 1단으로 접는다 — */
+  @media (max-width: 900px){
+    .row-pair{grid-template-columns:1fr !important}
+    /* 1단으로 접히면 세로 괘선은 뜻이 없다 — 가로 괘선으로 바꿔 준다 */
+    .row-pair > .blueprint:first-child{padding-right:0}
+    .row-pair > .blueprint + .blueprint{padding-left:0;border-left:0;border-top:1px solid var(--rule-mid)}
+    #fx-regions{grid-template-columns:1fr 1fr !important}
+    #fx-regions > div:nth-child(3){padding-left:0;border-left:0;border-top:1px dotted var(--rule-thin);padding-top:8px;margin-top:8px}
+  }
+  @media (max-width: 640px){
+    .page-pad{padding:0 13px 24px !important;gap:0 !important}
+    .page-pad > .blueprint,.row-pair > .blueprint{padding:13px 0 16px !important}
+    .nav{flex-wrap:wrap;padding:10px 13px !important;gap:6px 13px !important}
+    #fx-regions,#idx-main{grid-template-columns:1fr !important}
+    /* 1단에서는 칼럼 괘선을 가로선으로 돌린다 */
+    #fx-regions > div,#idx-main > div{padding:0 !important}
+    #fx-regions > div + div,#idx-main > div + div{border-left:0;border-top:1px dotted var(--rule-thin);padding-top:8px !important;margin-top:8px}
+    .page-pad > .blueprint > div > h4{font-size:21px}
+    #ticker-strip > div:nth-child(5){min-width:176px !important}
+    #ticker-strip > div:nth-child(5) > span:nth-child(2){font-size:28px !important}
+    .panel-head{flex-wrap:wrap;gap:6px}
+    /* 제목 옆 기준일·출처·건수는 좁은 화면에서 제목과 자리를 다툰다.
+       제목이 한 줄을 통째로 쓰게 해서 아래로 내린다. */
+    .panel-head > h4{flex:1 1 100%}
+    #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
+    /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을 확대한다 */
+    #global-search,#news-kw-input{font-size:16px !important}
+    /* 탭 줄은 감춰진 채 옆으로 밀리느니 접혀서 다 보이는 편이 낫다 */
+    .seg-nowrap{flex-wrap:wrap;overflow-x:visible;height:auto !important;border:0;gap:5px}
+    .seg-nowrap .seg-opt{border:1px solid var(--rule-thin)}
+    /* 한글은 기본값이 아무 데서나 끊긴다 — keep-all 이면 띄어쓰기에서만 접힌다 */
+    h4,h5,.kop{word-break:keep-all;overflow-wrap:break-word}
+  }
+
+  /* ── 다크 판본 보정 ───────────────────────────────────────────────────
+     지반을 뒤집으면 값이 그대로여도 시각적으로 어긋나는 자리들만 손본다. */
+  /* 다크에서는 흰 글자가 더 굵어 보인다 — 획을 얇게 렌더링해 밝은 판본의 무게를 맞춘다 */
+  body{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+  /* 잉크 채움 탭·페이지 번호: 밝은 판을 그대로 뒤집으면 흰 덩어리가 너무 튄다.
+     지문 색 대신 한 단 낮춰 눈부심을 줄인다. */
+  .seg-opt:has(input:checked){background:var(--color-accent-800);color:var(--color-bg)}
+  /* 짝수 행 바탕 — 다크에서 흰색 3.5%는 안 보인다. 검정 쪽으로 눌러 홈을 만든다. */
+  .mv-list .mv-row:nth-child(even),.mv-list .mt-row:nth-child(even),.sw-s{background:rgba(0,0,0,.32)}
+  /* 강조 행(당국 선물환) — 밝은 판본의 회색 바탕을 다크에서는 옅은 광으로 */
+  .rd-hi{background:color-mix(in srgb,var(--color-text) 9%,transparent)}
+  .fi-interp{background:color-mix(in srgb,var(--color-text) 6%,transparent)}
+  /* 표 머리·라벨은 다크에서 자간이 더 벌어져 보인다 — 살짝 좁힌다 */
+  .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,
+  .flow-head span,.cv-head span{letter-spacing:.12em}
+</style>
+<template id="__bundler_thumbnail" data-bg-color="#0d1014">
+  <svg viewBox="0 0 1200 800" xmlns="http://www.w3.org/2000/svg">
+    <rect width="1200" height="800" fill="#0d1014"/>
+    <rect x="120" y="150" width="960" height="3" fill="#e9edf3"/>
+    <text x="120" y="120" font-family="Helvetica, Arial, sans-serif" font-size="58" font-weight="700" fill="#e9edf3" letter-spacing="-2">FX DESK</text>
+    <text x="120" y="330" font-family="Helvetica, Arial, sans-serif" font-size="150" font-weight="400" fill="#e9edf3" letter-spacing="-6">1,387.40</text>
+    <text x="820" y="330" font-family="Helvetica, Arial, sans-serif" font-size="92" font-weight="400" fill="#ff5f4e" letter-spacing="-3">▲0.42</text>
+    <g fill="#3d444e">
+      <rect x="120" y="420" width="960" height="2"/>
+      <rect x="120" y="490" width="960" height="2"/>
+      <rect x="120" y="560" width="960" height="2"/>
+      <rect x="120" y="630" width="960" height="2"/>
+      <rect x="120" y="700" width="960" height="2"/>
+    </g>
+    <g fill="#ff5f4e">
+      <rect x="780" y="445" width="170" height="26"/>
+      <rect x="780" y="585" width="120" height="26"/>
+    </g>
+    <g fill="#5aa6ff">
+      <rect x="780" y="515" width="140" height="26"/>
+      <rect x="780" y="655" width="190" height="26"/>
+    </g>
+  </svg>
+</template>
+</head>
+<body>
+
+<div style="max-width:none;margin:0;background:var(--color-bg);min-height:100vh">
+
+  <!-- 헤더 -->
+  <div class="nav" style="border-bottom:2px solid var(--rule-heavy);padding:13px 30px 11px;position:sticky;top:0;z-index:30;background:var(--color-bg)">
+    <span class="nav-brand" style="font-size:22px;margin-right:0;letter-spacing:-.035em">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:10px;font-weight:600;color:var(--c-dim);letter-spacing:.22em;text-transform:uppercase">Market Board</span></span>
+    <div style="position:relative;flex:1;max-width:360px;margin-right:auto">
+      <input class="input" type="text" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px">
+    </div>
+    <div class="seg" style="height:26px">
+      <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang" checked><span>한</span></label>
+      <label class="seg-opt" style="padding:3px 10px;font-size:11.5px"><input type="radio" name="lang"><span>EN</span></label>
+    </div>
+    <span class="conn-badge"><span class="conn-dot"></span><span>실시간 연결됨</span></span>
+    <span class="mono" style="font-size:16px;font-weight:500;letter-spacing:-.025em">15:42:08 KST</span>
+    <span class="mono" style="font-size:12px;color:var(--c-dim)">2026.08.26</span>
+  </div>
+
+  <!-- 티커 띠 -->
+  <div id="ticker-strip" style="display:flex;gap:0;border-bottom:1px solid var(--rule-heavy);background:var(--color-bg);overflow-x:auto">
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">KOSPI</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">6,808.21</span>
+      <span class="mono" style="font-size:11px;color:var(--c-up)">▲ +0.97%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">KOSDAQ</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">826.87</span>
+      <span class="mono" style="font-size:11px;color:var(--c-down)">▼ -0.03%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">NASDAQ</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">26,120.38</span>
+      <span class="mono" style="font-size:11px;color:var(--c-down)">▼ -0.12%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">S&P 500</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">7,675.91</span>
+      <span class="mono" style="font-size:11px;color:var(--c-down)">▼ -0.02%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">USD/KRW</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">1,385.52</span>
+      <span class="mono" style="font-size:11px;color:var(--c-up)">▲ +0.24%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">USD/JPY</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">159.40</span>
+      <span class="mono" style="font-size:11px;color:var(--c-up)">▲ +0.12%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">WTI</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">82.53</span>
+      <span class="mono" style="font-size:11px;color:var(--c-up)">▲ +0.21%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">GOLD</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">4,652.10</span>
+      <span class="mono" style="font-size:11px;color:var(--c-down)">▼ -0.90%</span>
+    </div>
+    <div class="clickable-row" role="button" tabindex="0" style="flex:1;min-width:152px;display:flex;flex-direction:column;gap:1px;padding:9px 14px 10px;border-right:1px solid var(--rule-hair)">
+      <span style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">US 10Y</span>
+      <span class="mono" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">4.67%</span>
+      <span class="mono" style="font-size:11px;color:var(--c-up)">▲ +0.63%</span>
+    </div>
+  </div>
+
+  <div class="page-pad" style="padding:0 30px 40px;display:flex;flex-direction:column;gap:0">
+
+    <!-- 환율 -->
+    <div class="blueprint panel">
+      <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:10px">
+        <h4 style="margin:0">환율 <span class="kop" style="font-size:11px">FX · 주요 통화쌍</span></h4>
+        <span style="font-size:11px" class="text-muted">지역별 · 실시간 (Yahoo Finance)</span>
+      </div>
+      <div id="fx-regions" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0">
+        <div>
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);padding:0 0 5px;border-bottom:1px solid var(--rule-mid)">아시아·태평양 APAC</div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/KRW</span>
+          <span class="mono fx-px">1,385.52</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.24%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/JPY</span>
+          <span class="mono fx-px">159.40</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.12%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/CNH</span>
+          <span class="mono fx-px">6.7230</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.10%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">AUD/USD</span>
+          <span class="mono fx-px">0.7176</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.17%</span>
+        </div>
+        </div>
+        <div>
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);padding:0 0 5px;border-bottom:1px solid var(--rule-mid)">유럽 EUROPE</div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">EUR/USD</span>
+          <span class="mono fx-px">1.1655</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.17%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">GBP/USD</span>
+          <span class="mono fx-px">1.3593</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.41%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/CHF</span>
+          <span class="mono fx-px">0.8053</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.56%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">EUR/GBP</span>
+          <span class="mono fx-px">0.8572</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.20%</span>
+        </div>
+        </div>
+        <div>
+      <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);padding:0 0 5px;border-bottom:1px solid var(--rule-mid)">북미 NORTH AMERICA</div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/CAD</span>
+          <span class="mono fx-px">1.3874</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.29%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">USD/MXN</span>
+          <span class="mono fx-px">16.9566</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.09%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">DXY 달러지수</span>
+          <span class="mono fx-px">99.15</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.24%</span>
+        </div>
+        </div>
+      </div>
+      <div style="margin-top:16px;border-top:1px solid var(--rule-mid);padding-top:10px">
+        <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);margin-bottom:5px">환율 주요 뉴스 <span style="color:var(--c-label);letter-spacing:.04em;text-transform:none">· 네이버 금융 마켓인덱스</span></div>
+        <div class="nws-list">
+        <span class="mono nws-when">08/26 17:54</span>
+        <div class="nws-body">원/달러 환율, 장 초반 강보합 출발…1,380원대 중반에서 등락<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">샘플경제</span></div>
+        <span class="mono nws-when">08/26 17:46</span>
+        <div class="nws-body">외환당국 미세조정 경계에 상단 제한…수출업체 네고 물량 대기<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">예시일보</span></div>
+        <span class="mono nws-when">08/26 16:38</span>
+        <div class="nws-body">달러인덱스 소폭 반등, 아시아 통화 전반 약세…엔화는 159엔대<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">샘플경제</span></div>
+        <span class="mono nws-when">08/26 16:18</span>
+        <div class="nws-body">국내 증시 외국인 순매도 전환에 환율 상승 압력 확대<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">샘플금융</span></div>
+        <span class="mono nws-when">08/26 14:00</span>
+        <div class="nws-body">스왑포인트 1년물 낙폭 축소…연말 자금 수요 선반영 관측<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">예시일보</span></div>
+        <span class="mono nws-when">08/26 11:24</span>
+        <div class="nws-body">외환시장 야간 거래 비중 확대…시간대별 유동성 분포 변화<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">샘플경제</span></div>
+        <span class="mono nws-when">08/26 11:02</span>
+        <div class="nws-body">월말 결제 수요와 배당 역송금 겹쳐 수급 균형 시험대<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">샘플금융</span></div>
+        <span class="mono nws-when">08/26 09:01</span>
+        <div class="nws-body">역외 위안화 약세 연동…원화 동조 흐름 이어질지 주목<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">예시뉴스</span></div>
+        </div>
+        <div style="display:flex;justify-content:flex-start;gap:3px;margin-top:10px;flex-wrap:wrap"><button type="button" disabled style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:var(--color-text);color:var(--color-bg);cursor:default">‹</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:var(--color-text);color:var(--color-bg);cursor:pointer">1</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">2</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">3</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">›</button></div>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:0">
+
+      <div class="row-pair" style="display:grid;grid-template-columns:1.34fr 1fr;gap:0;align-items:start">
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">글로벌 지수 <span class="kop" style="font-size:11px">Global Indices</span></h4>
+          <div id="idx-main" style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+            <div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">코스피</span>
+          <span class="mono fx-px">6,808.21</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.97%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">코스닥</span>
+          <span class="mono fx-px">826.87</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.03%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">S&amp;P 500</span>
+          <span class="mono fx-px">7,675.91</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.02%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">나스닥</span>
+          <span class="mono fx-px">26,120.38</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.12%</span>
+        </div>
+            </div>
+            <div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">다우존스</span>
+          <span class="mono fx-px">53,453.70</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.23%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">니케이225</span>
+          <span class="mono fx-px">66,262.16</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.62%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">항셍 (HK)</span>
+          <span class="mono fx-px">25,652.97</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.56%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">유로스톡스 50</span>
+          <span class="mono fx-px">6,470.74</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.23%</span>
+        </div>
+            </div>
+          </div>
+        </div>
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">미국 금리 <span class="kop" style="font-size:11px">US Rates · Treasury Yield Curve</span></h4>
+          <div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">미 국채 13주</span>
+          <span class="mono fx-px">3.69%</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -1bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">미 국채 5년</span>
+          <span class="mono fx-px">4.39%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +4bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">미 국채 10년</span>
+          <span class="mono fx-px">4.67%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +3bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">미 국채 30년</span>
+          <span class="mono fx-px">5.19%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +2bp</span>
+        </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row-pair" style="display:grid;grid-template-columns:1fr 1.22fr;gap:0;align-items:start">
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">한국 금리 <span class="kop" style="font-size:11px">KR Rates · 국내 시장금리 · 네이버 금융</span></h4>
+          <div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">CD금리 (91일)</span>
+          <span class="mono fx-px">2.97%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +2bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">콜금리</span>
+          <span class="mono fx-px">2.77%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +1bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">국고채 (3년)</span>
+          <span class="mono fx-px">3.81%</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -2bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">회사채 (3년)</span>
+          <span class="mono fx-px">4.50%</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -1bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">COFIX 잔액</span>
+          <span class="mono fx-px">3.00%</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +6bp</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">COFIX 신규취급액</span>
+          <span class="mono fx-px">2.88%</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -3bp</span>
+        </div>
+          </div>
+        </div>
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">원자재 <span class="kop" style="font-size:11px">Commodities · 근월</span></h4>
+          <div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">금</span>
+          <span class="mono fx-px">$4,652.10</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.90%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">은</span>
+          <span class="mono fx-px">$67.92</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -1.10%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">백금</span>
+          <span class="mono fx-px">$1,843.00</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.99%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">WTI 원유</span>
+          <span class="mono fx-px">$82.53</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.21%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">브렌트유</span>
+          <span class="mono fx-px">$87.30</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.03%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">천연가스</span>
+          <span class="mono fx-px">$3.42</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +1.84%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">옥수수</span>
+          <span class="mono fx-px">$4.31</span>
+          <span class="mono fx-pct" style="color:var(--c-down)">▼ -0.46%</span>
+        </div>
+        <div class="fx-row clickable-row" role="button" tabindex="0">
+          <span class="fx-pair">대두</span>
+          <span class="mono fx-px">$10.28</span>
+          <span class="mono fx-pct" style="color:var(--c-up)">▲ +0.29%</span>
+        </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row-pair" style="display:grid;grid-template-columns:1.18fr 1fr;gap:0;align-items:start">
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">국내 등락 상위 <span class="kop" style="font-size:11px">KR Movers</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+            <div class="seg" style="height:28px">
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv" checked><span>상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="mv"><span>하락</span></label>
+            </div>
+          </div>
+          <div class="scroll-x"><div class="mv-list">
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">1</span>
+            <span class="mv-name">시그네틱스*</span>
+            <span class="mono mv-px">3,415</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+22.41%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">2</span>
+            <span class="mv-name">CSA 코스믹*</span>
+            <span class="mono mv-px">1,208</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+19.84%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">3</span>
+            <span class="mv-name">유디엠텍*</span>
+            <span class="mono mv-px">8,940</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+16.93%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">4</span>
+            <span class="mv-name">이월드</span>
+            <span class="mono mv-px">2,065</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+14.61%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">5</span>
+            <span class="mv-name">SK아이이테크놀로지</span>
+            <span class="mono mv-px">58,700</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+12.60%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">6</span>
+            <span class="mv-name">본느*</span>
+            <span class="mono mv-px">1,877</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+11.53%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">7</span>
+            <span class="mv-name">아이씨에이치*</span>
+            <span class="mono mv-px">4,215</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+9.87%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">8</span>
+            <span class="mv-name">헝셩그룹*</span>
+            <span class="mono mv-px">652</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+8.42%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">9</span>
+            <span class="mv-name">KODEX 레버리지<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">24,180</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+7.91%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">10</span>
+            <span class="mv-name">모아데이타*</span>
+            <span class="mono mv-px">3,090</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+7.44%</span>
+          </div>
+          </div></div>
+        </div>
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">국내 거래 상위 <span class="kop" style="font-size:11px">KR Most Traded · 거래대금 순</span> <span style="font-size:10.5px;color:var(--c-label);font-weight:400">(* 코스닥)</span></h4>
+          <div class="scroll-x"><div class="mv-list">
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">1</span>
+            <span class="mv-name">삼성전자</span>
+            <span class="mono mv-px">261,500</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+1.75%</span>
+            <span class="mono mt-vol">7.96조</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">2</span>
+            <span class="mv-name">SK하이닉스</span>
+            <span class="mono mv-px">684,000</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+2.31%</span>
+            <span class="mono mt-vol">5.12조</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">3</span>
+            <span class="mv-name">KODEX 200<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">42,815</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+0.88%</span>
+            <span class="mono mt-vol">1.84조</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">4</span>
+            <span class="mv-name">KODEX 레버리지<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">24,180</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+7.91%</span>
+            <span class="mono mt-vol">1.21조</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">5</span>
+            <span class="mv-name">TIGER 미국S&amp;P500<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">24,900</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-0.14%</span>
+            <span class="mono mt-vol">9,870억</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">6</span>
+            <span class="mv-name">TIGER 200<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">42,900</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+0.86%</span>
+            <span class="mono mt-vol">8,412억</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">7</span>
+            <span class="mv-name">TIGER 미국나스닥100<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">138,650</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-0.22%</span>
+            <span class="mono mt-vol">7,650억</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">8</span>
+            <span class="mv-name">KODEX 인버스<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">3,120</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-0.85%</span>
+            <span class="mono mt-vol">6,905억</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">9</span>
+            <span class="mv-name">삼성전자우</span>
+            <span class="mono mv-px">212,000</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+1.44%</span>
+            <span class="mono mt-vol">5,180억</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">10</span>
+            <span class="mv-name">한미반도체</span>
+            <span class="mono mv-px">184,300</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-2.11%</span>
+            <span class="mono mt-vol">4,762억</span>
+          </div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="row-pair" style="display:grid;grid-template-columns:1fr 1.26fr;gap:0;align-items:start">
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <h4 style="margin:0">미국 등락 상위 <span class="kop" style="font-size:11px">US Movers · 주식 + ETF</span></h4>
+            <div class="seg" style="height:28px">
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv" checked><span>상승</span></label>
+              <label class="seg-opt" style="padding:4px 14px;font-size:12px"><input type="radio" name="usmv"><span>하락</span></label>
+            </div>
+          </div>
+          <div class="scroll-x"><div class="mv-list">
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">1</span>
+            <span class="mv-name">Leverage Shares 2X Long SMCI Da<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$7.64</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+16.93%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">2</span>
+            <span class="mv-name">KANZHUN LIMITED - American Depo</span>
+            <span class="mono mv-px">$19.00</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+16.61%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">3</span>
+            <span class="mv-name">Tradr 2X Long TTMI ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$8.59</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+13.87%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">4</span>
+            <span class="mv-name">Defiance Daily Target 2X Short<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$25.58</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+13.69%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">5</span>
+            <span class="mv-name">T-REX 2X Long LITE Daily Target<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$21.31</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+13.61%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">6</span>
+            <span class="mv-name">Tradr 2X Short SMR ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$18.55</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+13.53%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">7</span>
+            <span class="mv-name">Teucrium 2x Daily Wheat ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$25.65</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+12.60%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">8</span>
+            <span class="mv-name">Tradr 2X Long LITE ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$33.77</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+12.41%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">9</span>
+            <span class="mv-name">Direxion Daily NVDA Bull 2X<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$41.02</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+11.88%</span>
+          </div>
+          <div class="mv-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">10</span>
+            <span class="mv-name">Hut 8 Corp</span>
+            <span class="mono mv-px">$26.14</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+10.95%</span>
+          </div>
+          </div></div>
+        </div>
+        <div class="blueprint panel">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <h4 style="margin:0 0 10px">미국 Most Active <span class="kop" style="font-size:11px">US Most Active · 거래량 순 · 주식 + ETF</span></h4>
+          <div class="scroll-x"><div class="mv-list">
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">1</span>
+            <span class="mv-name">Lucid Group, Inc.</span>
+            <span class="mono mv-px">$2.31</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-3.12%</span>
+            <span class="mono mt-vol">128.4M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">2</span>
+            <span class="mv-name">Ford Motor Company</span>
+            <span class="mono mv-px">$11.86</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+0.42%</span>
+            <span class="mono mt-vol">94.2M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">3</span>
+            <span class="mv-name">Direxion Daily TSLA Bull 2X ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$14.55</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+2.10%</span>
+            <span class="mono mt-vol">71.8M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">4</span>
+            <span class="mv-name">NVIDIA</span>
+            <span class="mono mv-px">$210.85</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-1.03%</span>
+            <span class="mono mt-vol">65.5M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">5</span>
+            <span class="mv-name">Plug Power</span>
+            <span class="mono mv-px">$2.16</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-4.84%</span>
+            <span class="mono mt-vol">63.4M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">6</span>
+            <span class="mv-name">American Airlines Group</span>
+            <span class="mono mv-px">$13.97</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+0.18%</span>
+            <span class="mono mt-vol">55.1M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">7</span>
+            <span class="mv-name">Snap</span>
+            <span class="mono mv-px">$5.38</span>
+            <span class="mono mv-pct" style="color:var(--c-down)">-9.21%</span>
+            <span class="mono mt-vol">48.2M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">8</span>
+            <span class="mv-name">Intel</span>
+            <span class="mono mv-px">$87.61</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+0.14%</span>
+            <span class="mono mt-vol">47.3M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">9</span>
+            <span class="mv-name">GraniteShares 2x Short NVDA Dai<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$4.46</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+2.18%</span>
+            <span class="mono mt-vol">43.5M</span>
+          </div>
+          <div class="mt-row clickable-row" role="button" tabindex="0">
+            <span class="mv-rank">10</span>
+            <span class="mv-name">Tradr 2X Long SNDK Daily ETF<span class="mv-tag">ETF</span></span>
+            <span class="mono mv-px">$13.14</span>
+            <span class="mono mv-pct" style="color:var(--c-up)">+2.06%</span>
+            <span class="mono mt-vol">43.2M</span>
+          </div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- 여기부터는 기본이 접힘 — 제목줄만 쌓인다 -->
+        <div class="blueprint panel collapsible" data-panel="flow">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>주식 수급 · 투자자별 수급 현황 <span class="kop" style="font-size:11px">Equity Investor Flows · 네이버 증권</span></h4>
+            
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="bflow">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>채권 수급 · 투자자별 순매수 <span class="kop" style="font-size:11px">Bond Net Buy · KOFIA 장외채권</span></h4>
+            
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="swap">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>원화 스왑 <span class="kop" style="font-size:11px">KRW Swaps · 서울외국환중개 FX Swap · IRS · CRS</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">26.08.26 고시</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="curve">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>채권 수익률 곡선 <span class="kop" style="font-size:11px">Bond Yield Curve · SEIBro 만기수익률 + KOFIA 최종호가</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">2026.08.25 고시</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="strate">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>단기금융시장 금리 <span class="kop" style="font-size:11px">Short-Term Rates · KOFIA CP · 전자단기사채 대표수익률</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">2026.08.26 고시</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="drain">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>외환보유액 단기 유출예정액 <span class="kop" style="font-size:11px">Predetermined Short-Term Net Drains (Unit: US$ million)</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">2026.06.30 기준 · 2026.08.26 공표</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="fxbond">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>외화표시채 발행 <span class="kop" style="font-size:11px">FX-Denominated Bond Issuance · SEIBro · 최근 1년</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">16건</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="basis">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>코스피200 현·선물 <span class="kop" style="font-size:11px">Basis · 저평 / 고평</span></h4>
+            
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="custody">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>국내 투자자 미국 주식 보관금액 <span class="kop" style="font-size:11px">Korean Investors · US Equity Custody · 월별 · SEIBro</span></h4>
+            <span class="mono" style="font-size:11px;color:var(--c-label)">SEIBro 국제거래 · 시장별내역</span>
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+        <div class="blueprint panel collapsible" data-panel="kwnews">
+          <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+          <div class="panel-head pnl-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px">
+            <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>키워드 뉴스 <span class="kop" style="font-size:11px">Keyword News · 네이버 뉴스 검색 · 관련도순</span></h4>
+            
+          </div>
+          <!-- 펼친 내용은 이 목업에 넣지 않았다 — 메인화면의 기본 상태는 접힘이다. -->
+          <div class="panel-body"><div></div></div>
+        </div>
+
+      <!-- 주요 뉴스 (접히지만 마지막 패널이라 펴진 모습으로 둔다) -->
+      <div class="blueprint panel collapsible open" data-panel="news">
+        <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+        <div class="panel-head pnl-head" style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px">
+          <h4 style="margin:0"><span class="pnl-caret" aria-hidden="true"></span>주요 뉴스 <span class="kop" style="font-size:11px">Headlines · 최근 24시간 · 네이버 증권 · Yahoo Finance</span></h4>
+          <span class="mono" style="font-size:11px;color:var(--c-label)">총 299건</span>
+        </div>
+        <div class="panel-body"><div>
+          <div style="position:relative;margin-bottom:8px">
+            <input class="input" type="text" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px">
+          </div>
+          <div class="kw-wrap">
+            <span class="kw-chip"><span>반도체</span><button type="button">✕</button></span>
+            <span class="kw-chip"><span>환율</span><button type="button">✕</button></span>
+          </div>
+          <div class="nws-list">
+        <span class="mono nws-when">02:52</span>
+        <div class="nws-body">Update: Equities Fall Intraday After Inflation Report; Chip Earnings On Deck<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">MT Newswires</span></div>
+        <span class="mono nws-when">02:49</span>
+        <div class="nws-body">Sector Rotation Accelerates as Investors Reweight Toward Defensives<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Zacks</span></div>
+        <span class="mono nws-when">02:40</span>
+        <div class="nws-body">Market Indexes Hold Flat as Wall Street Waits on Guidance<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Motley Fool</span></div>
+        <span class="mono nws-when">02:37</span>
+        <div class="nws-body">Dollar Steadies After Two-Session Slide; Yields Drift Higher<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Associated Press</span></div>
+        <span class="mono nws-when">02:33</span>
+        <div class="nws-body">Update: US Equity Indexes Slip as Investors Await Inflation Print<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">MT Newswires</span></div>
+        <span class="mono nws-when">02:19</span>
+        <div class="nws-body">Energy Complex Firms on Supply Headlines, Refining Margins Widen<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Trefis</span></div>
+        <span class="mono nws-when">02:15</span>
+        <div class="nws-body">Semiconductor Capex Cycle Shows Early Signs of Broadening Out<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Barrons.com</span></div>
+        <span class="mono nws-when">02:09</span>
+        <div class="nws-body">Exchange-Traded Funds Fall as US Equities Decline After Midday<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">MT Newswires</span></div>
+        <span class="mono nws-when">02:05</span>
+        <div class="nws-body">Stock Market Today: Benchmarks Mixed as Rate Path Repricing Continues<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Investor's Business Daily</span></div>
+        <span class="mono nws-when">02:02</span>
+        <div class="nws-body">This Sector Proves the Infrastructure Build-Out Is Far From Over<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle;margin-left:5px">Barrons.com</span></div>
+          </div>
+          <div style="display:flex;justify-content:flex-start;gap:3px;margin-top:10px;flex-wrap:wrap"><button type="button" disabled style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:var(--color-text);color:var(--color-bg);cursor:default">‹</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:var(--color-text);color:var(--color-bg);cursor:pointer">1</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">2</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">3</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">4</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">5</button><button type="button"  style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:transparent;color:inherit;cursor:pointer">›</button></div>
+        </div></div>
+      </div>
+
+    </div>
+
+    <div style="text-align:left;font-size:10px;color:var(--c-label);padding-top:12px;margin-top:20px;border-top:1px solid var(--rule-mid);letter-spacing:.06em">
+      FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신 <span class="mono">15:42:08</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

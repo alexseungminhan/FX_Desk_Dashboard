@@ -119,6 +119,12 @@
     document.querySelectorAll("[data-ko-only]").forEach((el) => {
       el.style.display = isEn() ? "none" : "";
     });
+    // 판본 버튼("자동/밝게/어둡게")은 data-i18n 이 아니라 테마 스크립트가
+    // 그린다 — 지금 무엇이 걸려 있는지에 따라 글자가 달라지기 때문이다.
+    if (window.__fxTheme) window.__fxTheme.refresh();
+    // 제목 innerHTML 을 통째로 갈아 끼웠다 — motion.js 가 단어 마스크를
+    // 새 문구로 다시 잘라 넣게 알린다.
+    document.dispatchEvent(new CustomEvent("lang-applied"));
   }
 
   function resetRenderCaches() {
@@ -172,9 +178,61 @@
   // 그만큼 레이아웃과 이벤트 바인딩이 통째로 다시 일어난다.
   function setHtml(el, html) {
     if (!el || el.__html === html) return false;
+    const before = snapshotValues(el);
     el.__html = html;
     el.innerHTML = html;
+    flashChanged(el, before);
     return true;
+  }
+
+  // -- 값 변화 하이라이트 ------------------------------------------------
+  //
+  // 초 단위로 갱신되는 화면에서 "방금 무엇이 움직였나" 를 눈으로 잡을 수
+  // 있게, 값이 바뀐 칸의 바탕을 잠깐 물들였다 뺀다 (styles 의 flash-up/dn).
+  //
+  // 칸을 알아보는 열쇠는 "그 행의 종목코드 + 칸 순서" 다. 순위표는 매 갱신
+  // 마다 행 순서가 바뀌므로 위치만으로 짚으면 엉뚱한 칸이 번쩍인다.
+
+  // 다시 그리기 직전의 값을 뜬다. 갱신이 잦은 칸(.mono)만 본다.
+  function snapshotValues(el) {
+    const map = new Map();
+    el.querySelectorAll(".mono").forEach((node, i) => {
+      map.set(valueKey(node, i), node.textContent);
+    });
+    return map;
+  }
+
+  function valueKey(node, i) {
+    const row = node.closest("[data-symbol]");
+    if (!row) return `#${i}`;
+    // 같은 행 안에서 몇 번째 값 칸인지 — 종목이 순위를 오르내려도 안 흔들린다
+    const cells = [...row.querySelectorAll(".mono")];
+    return `${row.dataset.symbol}#${cells.indexOf(node)}`;
+  }
+
+  // 숫자만 뽑아 견준다 — "▲ +0.24%" 처럼 화살표·부호가 섞여 있다.
+  function numOf(text) {
+    const m = String(text).replace(/,/g, "").match(/-?\d+(\.\d+)?/);
+    return m ? parseFloat(m[0]) : null;
+  }
+
+  function flashChanged(el, before) {
+    if (!before.size) return;                 // 첫 렌더는 전부 "새 값" 이라 건너뛴다
+    el.querySelectorAll(".mono").forEach((node, i) => {
+      const key = valueKey(node, i);
+      if (!before.has(key)) return;
+      const old = before.get(key);
+      const now = node.textContent;
+      if (old === now) return;
+      const a = numOf(old), b = numOf(now);
+      // 숫자를 못 뽑으면(종목명 등) 오른 것도 내린 것도 아니다 — 그냥 둔다
+      if (a === null || b === null || a === b) return;
+      const cls = b > a ? "flash-up" : "flash-dn";
+      node.classList.remove("flash-up", "flash-dn");
+      void node.offsetWidth;                  // 애니메이션 재시작
+      node.classList.add(cls);
+      node.addEventListener("animationend", () => node.classList.remove(cls), { once: true });
+    });
   }
 
   // 값 행은 div 지만 하는 일은 버튼이다 — 키보드와 스크린리더에도 그렇게
@@ -194,13 +252,77 @@
 
   // -- panel renderers ---------------------------------------------------
 
+  // -- 티커 띠 ------------------------------------------------------------
+  //
+  // 칸은 전부 같은 크기고, 띠 전체가 천천히 왼쪽으로 흐른다. 같은 칸을 한 벌
+  // 더 복제해 붙여 두고 -50% 까지 민 뒤 0 으로 되감으므로 이음매가 안 보인다
+  // (styles 의 @keyframes ticker-slide).
+  //
+  // 값이 바뀔 때마다 innerHTML 을 갈아 끼우면 CSS 애니메이션이 처음으로
+  // 되감겨 띠가 계속 튄다. 그래서 뼈대는 종목 구성이 바뀔 때만 다시 짓고,
+  // 평소에는 칸 안의 글자만 제자리에서 고쳐 쓴다.
+  const TICKER_SECONDS_PER_CELL = 5.5;   // 한 칸이 지나가는 데 걸리는 시간
+
+  function tickerCellHtml(r, clone) {
+    return `<div class="tk-cell clickable-row${clone ? " tk-clone" : ""}"${clone ? ' aria-hidden="true"' : ""}${ROW_A11Y} data-kind="${esc(r.kind || "index")}" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name || r.label)}"${r.pair ? ` data-pair="${esc(r.pair)}"` : ""}${r.contract ? ` data-contract="${esc(r.contract)}"` : ""}${r.sub ? ` data-sub="${esc(r.sub)}"` : ""} style="display:flex;flex-direction:column;gap:1px;padding:9px 16px 10px"${staleTitle(r)}>
+        <span class="tk-label" style="font-size:9px;font-weight:700;letter-spacing:.2em;color:var(--c-label);text-transform:uppercase;white-space:nowrap">${esc(tr(r.label))}</span>
+        <span class="mono tk-px" style="font-size:26px;font-weight:400;letter-spacing:-.04em;line-height:1.05">${esc(r.price)}</span>
+        <span class="mono tk-pct" style="font-size:11px;color:${r.color}">${r.arrow} ${esc(r.pct)}</span>
+      </div>`;
+  }
+
   function renderTicker(rows) {
-    setHtml($("ticker-strip"), rows.map((r) => `
-      <div class="clickable-row"${ROW_A11Y} data-kind="${esc(r.kind || "index")}" data-symbol="${esc(r.symbol)}" data-name="${esc(r.name || r.label)}"${r.pair ? ` data-pair="${esc(r.pair)}"` : ""}${r.contract ? ` data-contract="${esc(r.contract)}"` : ""}${r.sub ? ` data-sub="${esc(r.sub)}"` : ""} style="flex:1;min-width:110px;display:flex;flex-direction:column;gap:1px;padding:8px 14px;border-right:1px solid var(--color-divider)"${staleTitle(r)}>
-        <span style="font-size:10px;letter-spacing:.06em;color:var(--c-sub);text-transform:uppercase;white-space:nowrap">${esc(tr(r.label))}</span>
-        <span class="mono${r.stale ? " stale-dot" : ""}" style="font-size:15px;font-weight:500">${esc(r.price)}</span>
-        <span class="mono" style="font-size:11px;color:${r.color}">${r.arrow} ${esc(r.pct)}</span>
-      </div>`).join(""));
+    const track = $("ticker-track");
+    if (!track) return;
+
+    // 뼈대는 종목 구성(과 언어)이 바뀔 때만 다시 짓는다
+    const shape = rows.map((r) => `${r.symbol}|${tr(r.label)}`).join(",");
+    if (track.dataset.shape !== shape) {
+      track.dataset.shape = shape;
+      // 복제본은 스크린리더에서 빼 준다 — 같은 값이 두 번 읽힌다. 감싸는
+      // 껍데기 없이 나란히 붙여야 칸막이 규칙(.tk-cell)이 양쪽에 다 걸린다.
+      track.innerHTML = rows.map((r) => tickerCellHtml(r, false)).join("")
+        + rows.map((r) => tickerCellHtml(r, true)).join("");
+      const cells = [...track.children];
+      track.__cells = cells.slice(0, rows.length);
+      track.__clones = cells.slice(rows.length);
+      sizeTicker(rows.length);
+      return;
+    }
+
+    // 평소 갱신 — 글자만 제자리에서 고쳐 쓴다
+    const cells = track.__cells || [];
+    const clones = track.__clones || [];
+    rows.forEach((r, i) => {
+      [cells[i], clones[i]].forEach((cell) => {
+        if (!cell) return;
+        const px = cell.querySelector(".tk-px");
+        setCellText(px, esc(r.price));
+        const pct = cell.querySelector(".tk-pct");
+        setCellText(pct, `${r.arrow} ${esc(r.pct)}`);
+        if (pct) pct.style.color = r.color;
+        px?.classList.toggle("stale-dot", !!r.stale);
+      });
+    });
+  }
+
+  // 칸 하나가 지나가는 시간을 일정하게 잡아 종목 수가 달라져도 속도가 같다.
+  function sizeTicker(count) {
+    const track = $("ticker-track");
+    if (!track) return;
+    const strip = $("ticker-strip");
+    // 화면을 다 채우지 못할 만큼 종목이 적으면 굳이 흘리지 않는다
+    const fits = track.scrollWidth / 2 <= strip.clientWidth;
+    track.classList.toggle("static", fits);
+    track.classList.toggle("rolling", !fits);
+    track.style.setProperty("--ticker-duration", `${(count * TICKER_SECONDS_PER_CELL).toFixed(1)}s`);
+  }
+  window.addEventListener("resize", () => sizeTicker($("ticker-track")?.__cells?.length || 0));
+
+  // 흐르는 띠라 하이라이트는 걸지 않는다 — 글자만 조용히 갈아 끼운다.
+  // 바뀐 게 없으면 DOM 도 건드리지 않는다 (초당 한 번씩 도는 자리다).
+  function setCellText(node, html) {
+    if (node && node.innerHTML !== html) node.innerHTML = html;
   }
 
   function fxRowHtml(f, kind) {
@@ -216,7 +338,7 @@
     regions.forEach((g, i) => {
       const col = $(`fx-col-${i}`);
       if (!col) return;
-      setHtml(col, `<div style="font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--color-accent);padding:4px 0;border-bottom:1px solid var(--color-divider)">${esc(tr(g.label))}</div>`
+      setHtml(col, `<div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--color-accent);padding:0 0 5px;border-bottom:1px solid var(--rule-mid)">${esc(tr(g.label))}</div>`
         + g.rows.map((f) => fxRowHtml(f, "fx")).join(""));
     });
   }
@@ -245,10 +367,31 @@
       </div>`).join(""));
   }
 
+  // 국내 순위가 오늘 장중 값이 아니라 직전 영업일 확정치일 때 제목 옆에
+  // 그 날짜를 적는다 (개장 전 08:30~09:00). 오늘 값이면 자리를 비워 둔다.
+  function krRankingsNote(session) {
+    if (!session) return "";
+    const [, mm, dd] = session.split("-");
+    return isEn() ? `as of ${mm}/${dd} close` : `${mm}.${dd} 종가 기준`;
+  }
+
+  // 어느 칸이 무엇인지 표 위에 적는다 — 값만 넉 줄 늘어놓으면 "주가"인지
+  // "등락률"인지 매번 헤아려야 한다. 거래대금 칸은 있는 표에만 붙는다.
+  function rankHead(volLabel) {
+    return `<div class="${volLabel ? "mt-row" : "mv-row"} mv-head">
+        <span class="mv-rank">#</span>
+        <span>${esc(t("h.name"))}</span>
+        <span style="text-align:right">${esc(t("h.price"))}</span>
+        <span style="text-align:right">${esc(t("h.chgpct"))}</span>
+        ${volLabel ? `<span style="text-align:right">${esc(t(volLabel))}</span>` : ""}
+      </div>`;
+  }
+
   function renderMovers() {
     if (!latest) return;
+    $("movers-session").textContent = krRankingsNote(latest.moversSession);
     const rows = moversTab === "gainers" ? latest.gainers : latest.losers;
-    setHtml($("movers-list"), rows.map((m) => `
+    setHtml($("movers-list"), rankHead() + rows.map((m) => `
       <div class="mv-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
@@ -259,7 +402,8 @@
 
   function renderKrMostTraded() {
     if (!latest) return;
-    setHtml($("kr-most-traded-list"), latest.krMostTraded.map((m) => `
+    $("mt-session").textContent = krRankingsNote(latest.mostTradedSession);
+    setHtml($("kr-most-traded-list"), rankHead("h.value") + latest.krMostTraded.map((m) => `
       <div class="mt-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.name.replace(/\*$/, ""))}"${staleTitle(m)}>
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
@@ -272,7 +416,7 @@
   function renderUsMovers() {
     if (!latest) return;
     const rows = usMoversTab === "gainers" ? latest.usGainers : latest.usLosers;
-    setHtml($("us-movers-list"), rows.map((m) => `
+    setHtml($("us-movers-list"), rankHead() + rows.map((m) => `
       <div class="mv-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
@@ -283,7 +427,7 @@
 
   function renderUsMostActive() {
     if (!latest) return;
-    setHtml($("us-most-active-list"), latest.usMostActive.map((m) => `
+    setHtml($("us-most-active-list"), rankHead("h.volume") + latest.usMostActive.map((m) => `
       <div class="mt-row clickable-row"${ROW_A11Y} data-symbol="${esc(m.symbol)}" data-name="${esc(m.fullName)}" title="${esc(m.symbol)} · ${esc(m.fullName)}">
         <span class="mv-rank">${m.rank}</span>
         <span class="mv-name">${esc(m.name)}${kindTag(m)}</span>
@@ -433,8 +577,8 @@
     for (let i = -2; i <= 2; i++) {
       const v = step * i;
       const y = yFor(v);
-      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="${i === 0 ? "#b9b9bc" : "#dedee0"}" stroke-width="1"/>`
-        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${esc(axisFmt(v))}</text>`;
+      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" style="stroke:${i === 0 ? "var(--rule-mid)" : "var(--rule-hair)"}" stroke-width="1"/>`
+        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" style="fill:var(--c-label)">${esc(axisFmt(v))}</text>`;
     }
 
     const marks = cells.map((c, i) => {
@@ -453,9 +597,9 @@
         <g>
           <title>${esc(c.label)} ${esc(c.value)}</title>
           <rect x="${cx - band / 2}" y="${y0}" width="${band}" height="${y1 - y0}" fill="transparent"/>
-          ${h < 0.5 ? "" : `<path d="${path}" fill="${c.color}"/>`}
-          <text x="${cx}" y="${labelY}" text-anchor="middle" font-size="11" font-weight="500" fill="${c.color}">${esc(c.value)}</text>
-          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="11" fill="#5d5d60">${esc(c.label)}</text>
+          ${h < 0.5 ? "" : `<path d="${path}" style="fill:${c.color}"/>`}
+          <text x="${cx}" y="${labelY}" text-anchor="middle" font-size="11" font-weight="500" style="fill:${c.color}">${esc(c.value)}</text>
+          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="11" style="fill:var(--c-dim)">${esc(c.label)}</text>
         </g>`;
     }).join("");
 
@@ -801,8 +945,8 @@
       const cells = r.values.map((v, i) => {
         const sign = r.signs[i];
         const color = v === "—" ? "var(--c-empty)"
-          : sign === "neg" ? "#c0392b"
-          : sign === "pos" ? "var(--color-accent)" : "var(--c-dim)";
+          : sign === "neg" ? "var(--c-up)"
+          : sign === "pos" ? "var(--c-down)" : "var(--c-dim)";
         return `<span class="mono rd-num" style="color:${color}">${esc(v)}</span>`;
       }).join("");
       const cls = "rd-row"
@@ -895,8 +1039,8 @@
     for (let i = 0; i <= 3; i++) {
       const v = bottom + ((top - bottom) * i) / 3;
       const y = yFor(v);
-      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" stroke="#dedee0" stroke-width="1"/>`
-        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" fill="#98989b">${v.toFixed(2)}</text>`;
+      grid += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}" style="stroke:var(--rule-hair)" stroke-width="1"/>`
+        + `<text x="${x0 - 8}" y="${y + 3.5}" text-anchor="end" font-size="10.5" style="fill:var(--c-label)">${v.toFixed(2)}</text>`;
     }
 
     const line = pts.map((p, i) => `${i ? "L" : "M"}${xFor(i)} ${yFor(p.yield)}`).join(" ");
@@ -908,9 +1052,9 @@
         <g>
           <title>${esc(tr(p.label))} ${esc(p.value)}%</title>
           <circle cx="${cx}" cy="${cy}" r="8" fill="transparent"/>
-          <circle cx="${cx}" cy="${cy}" r="4" fill="#5980a6" stroke="#f2f2f3" stroke-width="2"/>
-          <text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(p.value)}</text>
-          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="10.5" fill="#5d5d60">${esc(tr(p.label))}</text>
+          <circle cx="${cx}" cy="${cy}" r="4" style="fill:var(--color-text);stroke:var(--color-bg)" stroke-width="2"/>
+          <text x="${cx}" y="${cy - 12}" text-anchor="middle" font-size="10.5" style="fill:var(--c-dim)">${esc(p.value)}</text>
+          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="10.5" style="fill:var(--c-dim)">${esc(tr(p.label))}</text>
         </g>`;
     }).join("");
 
@@ -918,8 +1062,8 @@
       <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMidYMid meet"
            role="img" aria-label="${esc(isEn() ? `${tr(curve.label)} yields by tenor` : `${curve.label} 만기별 수익률`)}">
         ${grid}
-        <path d="${area}" fill="rgba(89,128,166,.10)"/>
-        <path d="${line}" fill="none" stroke="#5980a6" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        <path d="${area}" style="fill:color-mix(in srgb,var(--color-text) 8%,transparent)"/>
+        <path d="${line}" fill="none" style="stroke:var(--color-text)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
         ${marks}
       </svg>`);
   }
@@ -999,10 +1143,6 @@
     const start = (kwNewsPage - 1) * KW_NEWS_PAGE_SIZE;
     const shown = pool.slice(start, start + KW_NEWS_PAGE_SIZE);
 
-    // 검색어가 하나뿐인 그룹은 모든 줄에 같은 태그가 붙어 정보가 없다.
-    // 검색어가 섞인 그룹(M&A = M&A + 인수합병)에서만 어느 쪽에 걸렸는지 표시.
-    const showHit = new Set(shown.map((n) => n.hit)).size > 1;
-
     const empty = $("kwnews-empty");
     empty.style.display = items.length ? "none" : "block";
     if (!items.length) {
@@ -1015,9 +1155,8 @@
     setHtml($("kwnews-list"), shown.map((n) => `
       <div class="kwn-row">
         <span class="mono kwn-when">${esc(n.when)}</span>
-        <div style="font-size:12.5px;line-height:1.4;text-wrap:pretty">
+        <div style="font-size:12.5px;line-height:1.45;text-wrap:pretty;word-break:keep-all">
           ${safeUrl(n.url) ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${esc(n.headline)}</a>` : esc(n.headline)}
-          ${showHit ? `<span class="tag tag-accent" style="font-size:9px;padding:0 6px;vertical-align:middle">${esc(n.hit)}</span>` : ""}
           ${n.press ? `<span style="font-size:10.5px;color:var(--c-label);margin-left:5px">${esc(n.press)}</span>` : ""}
         </div>
       </div>`).join(""));
@@ -1105,7 +1244,7 @@
     box.style.display = "flex";
     const btn = (label, page, opts = {}) => `
       <button type="button" data-page="${page}" ${opts.disabled ? "disabled" : ""}
-        style="min-width:26px;padding:4px 8px;font-size:11.5px;border:1px solid var(--color-divider);background:${page === current ? "var(--color-accent)" : "transparent"};color:${page === current ? "#fff" : "inherit"};cursor:${opts.disabled ? "default" : "pointer"}">${label}</button>`;
+        style="min-width:24px;padding:3px 8px;font-size:11px;font-family:var(--font-mono);border:1px solid var(--rule-thin);background:${page === current ? "var(--color-text)" : "transparent"};color:${page === current ? "var(--color-bg)" : "inherit"};cursor:${opts.disabled ? "default" : "pointer"}">${label}</button>`;
 
     // 전체 페이지를 다 뿌리면 뉴스가 많은 날 버튼이 스무 개를 넘어 모바일에서
     // 두세 줄을 먹는다. 처음·끝과 현재 주변만 남기고 사이는 … 로 접는다.
@@ -1114,7 +1253,7 @@
     if (current >= totalPages - 2) [totalPages - 3, totalPages - 2, totalPages - 1].forEach((p) => keep.add(p));
     const pages = [...keep].filter((p) => p >= 1 && p <= totalPages).sort((a, b) => a - b);
 
-    const gap = '<span style="min-width:16px;text-align:center;font-size:11.5px;color:var(--c-label)">…</span>';
+    const gap = '<span style="min-width:16px;text-align:center;font-size:11px;color:var(--c-label)">…</span>';
     let body = "";
     pages.forEach((p, i) => {
       if (i && p - pages[i - 1] > 1) body += gap;
@@ -1282,9 +1421,9 @@
       gsResults.style.display = "block";
       return;
     }
-    const secLabel = (t) => `<div style="padding:6px 10px 3px;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);border-bottom:1px solid var(--color-divider)">${t}</div>`;
+    const secLabel = (t) => `<div style="padding:6px 10px 3px;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--color-accent);border-bottom:1px solid var(--rule-mid)">${t}</div>`;
     const row = (it, i) => `
-      <div class="gs-row" data-i="${i}" style="padding:8px 10px;font-size:12.5px;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px solid rgba(29,31,32,.06)">
+      <div class="gs-row" data-i="${i}" style="padding:8px 10px;font-size:12.5px;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:8px;border-bottom:1px dotted var(--rule-hair)">
         <span>${esc(it.label)}${it.sub ? ` <span style="color:var(--c-label);font-size:11px">${esc(it.sub)}</span>` : ""}</span>
         <span style="color:var(--c-label);font-size:11px;white-space:nowrap">${esc(it.tag)}</span>
       </div>`;
@@ -1537,7 +1676,7 @@
       <div class="pop-news-row">
         ${safeUrl(n.url)
           ? `<a href="${esc(safeUrl(n.url))}" target="_blank" rel="noopener">${esc(n.headline)}</a>`
-          : `<span style="font-family:var(--font-body);font-size:12.5px;line-height:1.4;color:#1d1f20;white-space:normal">${esc(n.headline)}</span>`}
+          : `<span style="font-family:var(--font-body);font-size:12.5px;line-height:1.4;color:var(--color-text);white-space:normal">${esc(n.headline)}</span>`}
       </div>`).join("");
   }
 
@@ -1733,29 +1872,25 @@
     return (p >= 0 ? "+" : "") + p.toFixed(1) + "%";
   }
   function pctColor(p) {
-    return p > 0 ? "var(--color-accent)" : p < 0 ? "#c0392b" : "var(--c-dim)";
+    return p > 0 ? "var(--c-up)" : p < 0 ? "var(--c-down)" : "var(--c-dim)";
   }
 
   function statTile(label, value, sub, subColor) {
     return `<div style="display:flex;flex-direction:column;gap:2px">
-      <span style="font-size:10px;letter-spacing:.06em;color:var(--c-dim);text-transform:uppercase">${esc(label)}</span>
-      <span class="mono" style="font-size:19px;font-weight:600;line-height:1.1">${esc(value)}</span>
-      ${sub ? `<span class="mono" style="font-size:11.5px;color:${subColor || "var(--c-dim)"}">${esc(sub)}</span>` : ""}
+      <span style="font-size:9.5px;font-weight:600;letter-spacing:.14em;color:var(--c-label);text-transform:uppercase">${esc(label)}</span>
+      <span class="mono" style="font-size:21px;font-weight:400;letter-spacing:-.03em;line-height:1.1">${esc(value)}</span>
+      ${sub ? `<span class="mono" style="font-size:11px;color:${subColor || "var(--c-dim)"}">${esc(sub)}</span>` : ""}
     </div>`;
-  }
-
-  // CSS 변수는 SVG 프레젠테이션 속성(fill/stroke)에 적용되지 않으므로 실제 색으로 변환.
-  function cssVar(name, fallback) {
-    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return v || fallback;
   }
 
   function custodyChartSvg(points, w = 1000, h = 240) {
     // padL 은 y축 눈금 글자("$149.3B")가 들어갈 만큼 잡는다.
     const padL = 62, padR = 34, padT = 34, padB = 30;
-    const accent = cssVar("--color-accent", "#5980a6");
-    const divider = cssVar("--color-divider", "#d7d7d9");
-    const bg = "#f2f2f3";
+    // CSS 변수는 SVG 프레젠테이션 속성(fill="…")에는 안 먹지만 style 선언에는
+    // 먹는다 — 이름 그대로 흘려 두면 밝은 판/다크 판이 바뀔 때 차트도 같이 간다.
+    const accent = "var(--color-text)";     // 크롬은 무채색. 유채색은 데이터 몫이다
+    const divider = "var(--rule-hair)";
+    const bg = "var(--color-bg)";
     const amts = points.map((p) => p.amount);
     const lo = Math.min(...amts), hi = Math.max(...amts);
     const rng = (hi - lo) || 1;
@@ -1773,20 +1908,20 @@
     const grid = [0, 1, 2, 3].map((i) => {
       const v = lo + (rng * i) / 3;
       const y = ys(v);
-      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + iw}" y2="${y.toFixed(1)}" stroke="${divider}" stroke-width="1"/>`
+      return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${padL + iw}" y2="${y.toFixed(1)}" style="stroke:${divider}" stroke-width="1"/>`
         + `<text x="${padL - 8}" y="${(y + 3.5).toFixed(1)}" text-anchor="end" font-size="10.5"`
-        + ` fill="${cssVar("--color-neutral-500", "#98989b")}" font-family="monospace">${esc(fmtUsdShort(v))}</text>`;
+        + ` style="fill:var(--c-label)" font-family="monospace">${esc(fmtUsdShort(v))}</text>`;
     }).join("");
 
     // 데이터 포인트 (기본은 빈 점)
     const dots = coords.map(([x, y]) =>
-      `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" fill="${bg}" stroke="${accent}" stroke-width="1.4"/>`
+      `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.8" style="fill:${bg};stroke:${accent}" stroke-width="1.4"/>`
     ).join("");
 
     // x축 월 라벨 (YY.MM)
     const labels = points.map((p, i) => {
       const [yy, mm] = p.month.split("-");
-      return `<text x="${coords[i][0].toFixed(1)}" y="${(h - 8).toFixed(1)}" text-anchor="middle" font-size="10" fill="#98989b" font-family="monospace">${yy.slice(2)}.${mm}</text>`;
+      return `<text x="${coords[i][0].toFixed(1)}" y="${(h - 8).toFixed(1)}" text-anchor="middle" font-size="10" style="fill:var(--c-label)" font-family="monospace">${yy.slice(2)}.${mm}</text>`;
     }).join("");
 
     // 마우스 감지용 세로 밴드 (점 사이 전 구간을 커버) — hover 시 값 표시
@@ -1799,17 +1934,17 @@
 
     // hover 표시 그룹 (JS로 위치·텍스트 갱신)
     const hover = `<g class="custody-hover" style="display:none" pointer-events="none">
-      <circle class="hv-dot" r="4.5" fill="${accent}" stroke="${bg}" stroke-width="1.6"/>
-      <text class="hv-val" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700" fill="${accent}"
-        style="paint-order:stroke;stroke:${bg};stroke-width:3.5px;stroke-linejoin:round"></text>
-      <text class="hv-month" text-anchor="middle" font-family="monospace" font-size="10" fill="#7a7a7d"
-        style="paint-order:stroke;stroke:${bg};stroke-width:3px;stroke-linejoin:round"></text>
+      <circle class="hv-dot" r="4.5" style="fill:${accent};stroke:${bg}" stroke-width="1.6"/>
+      <text class="hv-val" text-anchor="middle" font-family="monospace" font-size="13" font-weight="700"
+        style="fill:${accent};paint-order:stroke;stroke:${bg};stroke-width:3.5px;stroke-linejoin:round"></text>
+      <text class="hv-month" text-anchor="middle" font-family="monospace" font-size="10"
+        style="fill:var(--c-dim);paint-order:stroke;stroke:${bg};stroke-width:3px;stroke-linejoin:round"></text>
     </g>`;
 
     return `<svg viewBox="0 0 ${w} ${h}" style="display:block;width:100%;height:auto">
       ${grid}
-      <path d="${area}" fill="${accent}" fill-opacity="0.10"></path>
-      <path d="${line}" fill="none" stroke="${accent}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></path>
+      <path d="${area}" style="fill:${accent}" fill-opacity="0.10"></path>
+      <path d="${line}" fill="none" style="stroke:${accent}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"></path>
       ${dots}
       ${labels}
       ${hover}
@@ -1949,6 +2084,90 @@
   // 한 가지 규칙으로 처리하는 편이 낫다. 패널이 늘어도 클래스만 붙이면 된다.
   const COLLAPSE_KEY = "fxdesk.openPanels";
 
+  // 편 패널을 화면 맨 위로 데려온다. 아래쪽 색인을 눌러 폈을 때 내용이
+  // 화면 밖에서 펼쳐지면 아무 일도 안 일어난 것처럼 보인다.
+  // 헤더가 sticky 라 그 높이만큼 빼야 제목이 헤더에 가리지 않는다.
+  //
+  // 누르는 즉시 출발한다. 걸림돌은 접힌 패널들이 페이지 맨 아래에 색인처럼
+  // 쌓여 있다는 것 — 누른 순간에는 문서가 목표 지점까지 갈 만큼 길지 않아
+  // (아래쪽 패널은 600px 넘게 모자랐다) 브라우저가 갈 수 있는 데까지만 가고
+  // 멈춘다. 그래서 스크롤을 걸기 **전에** 모자라는 만큼 꼬리 여백을 먼저
+  // 달아 문서를 늘려 놓는다. 펼침이 끝나 내용이 자리를 차지하면 꼬리는
+  // 그만큼 도로 줄어든다.
+  function scrollPanelIntoView(panel) {
+    fitScrollTail(panel);            // 먼저 길을 내고
+    scrollToPanel(panel, 0.9);       // 곧바로 출발한다
+
+    // 펼치는 동안 문서가 계속 자란다 — 다 자라면 꼬리를 그만큼 줄인다.
+    // 전환이 취소되면 transitionend 가 안 오므로 타이머도 같이 건다.
+    const body = panel.querySelector(".panel-body");
+    if (!body) return;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      body.removeEventListener("transitionend", onEnd);
+      fitScrollTail(panel.classList.contains("open") ? panel : null);
+    };
+    const onEnd = (ev) => {
+      if (ev.target === body && ev.propertyName === "grid-template-rows") finish();
+    };
+    body.addEventListener("transitionend", onEnd);
+    setTimeout(finish, 620);
+  }
+
+  function panelTargetY(panel) {
+    const nav = document.querySelector(".nav");
+    const pad = (nav ? nav.offsetHeight : 0) + 8;
+    return Math.max(0, panel.getBoundingClientRect().top + window.scrollY - pad);
+  }
+
+  function scrollToPanel(panel, duration) {
+    const to = panelTargetY(panel);
+    if (Math.abs(to - window.scrollY) < 2) return;
+    // Lenis 는 문서 길이를 스스로 재 두는데, 방금 꼬리를 달아 늘어난 참이면
+    // 아직 옛 길이를 들고 있다. 가기 전에 다시 재게 한다.
+    if (window.__lenis) {
+      window.__lenis.resize();
+      window.__lenis.scrollTo(to, { duration });
+    } else {
+      window.scrollTo({ top: to, behavior: "smooth" });
+    }
+  }
+
+  // 맨 아래 패널들은 뒤에 남은 내용이 없어, 다 펼쳐도 제목을 화면 위로
+  // 끌어올릴 만큼 페이지가 길지 않다. 모자라는 만큼만 꼬리 여백을 달아
+  // 준다 — 어느 구획을 펴든 같은 자리에 서게 하려는 것이고, 접으면
+  // 도로 걷어서 빈 공간이 남지 않는다.
+  function scrollTail() {
+    let tail = $("scroll-tail");
+    if (!tail) {
+      tail = document.createElement("div");
+      tail.id = "scroll-tail";
+      tail.setAttribute("aria-hidden", "true");
+      tail.style.height = "0px";
+      document.querySelector(".page-pad")?.appendChild(tail);
+    }
+    return tail;
+  }
+
+  // `hold` 는 "지금 서 있는 자리를 지켜라" 는 뜻이다. 펼치는 중에는 켠다 —
+  // 꼬리를 줄이다 스크롤이 위로 딸려 올라가면 방금 연 패널이 도로 내려가
+  // 보인다. 접을 때는 끈다: 내용이 줄었으니 화면이 따라 올라가는 게 맞고,
+  // 그러지 않으면 접은 자리에 빈 꼬리만 덩그러니 남는다.
+  function fitScrollTail(panel, hold = true) {
+    const tail = scrollTail();
+    const now = parseFloat(tail.style.height) || 0;
+    // 꼬리를 뺀 문서 길이로 계산한다. 재기 위해 높이를 0 으로 되돌렸다가
+    // 다시 넣으면, 그 찰나에 스크롤이 문서 끝으로 끌려 내려가 화면이 튄다.
+    const bare = document.documentElement.scrollHeight - now - window.innerHeight;
+    let need = panel && panel.classList.contains("open")
+      ? Math.ceil(panelTargetY(panel) - bare)
+      : 0;
+    if (hold) need = Math.max(need, Math.ceil(window.scrollY - bare));
+    tail.style.height = `${Math.max(0, need)}px`;
+  }
+
   function initCollapsibles() {
     let open = [];
     try {
@@ -1977,6 +2196,19 @@
       const toggle = () => {
         panel.classList.toggle("open");
         head.setAttribute("aria-expanded", panel.classList.contains("open"));
+        if (panel.classList.contains("open")) {
+          // 접혀 있는 동안에는 높이가 0이라 리빌이 돌 수 없었다 —
+          // 펴지는 지금이 그 안의 표가 처음 보이는 순간이다.
+          document.dispatchEvent(new CustomEvent("panel-opened", { detail: panel }));
+          scrollPanelIntoView(panel);
+        } else {
+          // 접었으면 꼬리도 걷는다. 접히는 데 0.5초 걸리므로 그 뒤에 한 번 더 —
+          // 지금 재면 아직 안 줄어든 높이를 보고 꼬리를 남겨 둔다.
+          fitScrollTail(null, false);
+          setTimeout(() => {
+            if (!panel.classList.contains("open")) fitScrollTail(null, false);
+          }, 620);
+        }
         const keys = [...document.querySelectorAll(".panel.collapsible.open")]
           .map((p) => p.dataset.panel);
         try {
