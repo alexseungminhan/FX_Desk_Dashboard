@@ -2,8 +2,8 @@
  *
  * 무엇을 움직이고 무엇을 두는지가 이 파일의 요점이다. 이 화면은 마케팅
  * 페이지가 아니라 초 단위로 값이 바뀌는 시세판이라, 값 자체는 절대
- * 미끄러뜨리지 않는다 — 움직이는 건 "구획이 처음 눈에 들어올 때" 뿐이고,
- * 한 번 나타난 구획은 다시 스크롤해도 가만히 있는다(once).
+ * 미끄러뜨리지 않는다 — 움직이는 건 구획이 시야에 들고 날 때뿐이다.
+ * 화면을 완전히 벗어나면 다시 감췄다가, 되돌아오면 또 떠오른다.
  *
  * 실제 움직임은 전부 CSS 전환이 맡고(원본 페이지의 .reveal / .mask-word),
  * 여기서는 "언제 시작할지"만 정한다. requestAnimationFrame 으로 프레임마다
@@ -12,9 +12,8 @@
  * CSS 는 도착 상태가 선언으로 박혀 있어서 전환이 안 돌더라도 보이는 상태로
  * 끝난다.
  *
- * 그래서 남는 일은 IntersectionObserver 하나와 스크롤 리스너 하나뿐이라
- * 라이브러리를 쓰지 않는다. 부드러운 스크롤(Lenis)만 vendor/ 에 두었다 —
- * 그건 직접 만들 물건이 아니다.
+ * 그래서 남는 일은 IntersectionObserver 하나뿐이라 라이브러리를 쓰지 않는다.
+ * 부드러운 스크롤(Lenis)만 vendor/ 에 두었다 — 그건 직접 만들 물건이 아니다.
  *
  * prefers-reduced-motion 을 켠 사람에게는 전부 끈다.
  */
@@ -41,10 +40,17 @@ function indexChildren(el) {
 }
 
 function revealNow(el, startDelay = 0) {
-  if (el.classList.contains("revealed")) return;
   indexChildren(el);
-  if (startDelay) el.style.transitionDelay = `${startDelay}s`;
+  el.style.transitionDelay = startDelay ? `${startDelay}s` : "";
   el.classList.add("revealed");
+}
+
+// 화면 밖으로 완전히 나가면 다시 감춘다 — 되돌아오면 또 떠오르게 하려는 것.
+// 계단 지연은 첫 등장에만 쓰고 여기서 지운다. 안 지우면 다시 들어올 때마다
+// 처음 순서대로 밀려서, 스크롤을 되짚는 사람에게는 굼뜨게만 보인다.
+function unrevealNow(el) {
+  el.style.transitionDelay = "";
+  el.classList.remove("revealed");
 }
 
 function inViewportNow(el) {
@@ -55,37 +61,48 @@ function inViewportNow(el) {
 /* — 스크롤 진입 리빌 —
    구획(.blueprint)과 제목이 시야에 들어오면 아래에서 위로 떠오른다.
    관찰기는 하나만 두고 대상을 전부 물린다 — 요소마다 새로 만들면 스무 개가
-   화면에 계속 살아 있게 된다. 한 번 드러난 대상은 즉시 unobserve 한다. */
+   화면에 계속 살아 있게 된다.
+
+   문턱을 둘로 잡은 게 요점이다. 12% 보이면 떠오르고, 완전히 벗어났을 때만
+   (0%) 도로 감춘다. 하나로 잡으면 그 언저리에 걸친 구획이 스크롤을 조금
+   움직일 때마다 깜빡인다. 사이 구간에서는 아무것도 하지 않는다. */
 let revealObserver = null;
 
 function observeReveal(el) {
   if (!revealObserver) {
     revealObserver = new IntersectionObserver((entries) => {
       for (const e of entries) {
-        if (!e.isIntersecting) continue;
-        revealObserver.unobserve(e.target);   // once — 볼 일이 끝났다
-        revealNow(e.target);
+        if (e.intersectionRatio >= 0.12) revealNow(e.target);
+        else if (e.intersectionRatio <= 0) unrevealNow(e.target);
       }
-    }, { threshold: 0.12 });
+    }, { threshold: [0, 0.12] });
   }
   revealObserver.observe(el);
 }
 
 function wireReveals() {
-  // 첫 화면에 이미 들어와 있는 구획은 스크롤을 기다리지 않는다. 기다리게
-  // 두면 백그라운드 탭에서 IntersectionObserver 가 늦게 깨는 동안 본문이
-  // 통째로 빈 화면으로 남는다 — 시세판에서는 고장으로 보인다.
-  let n = 0;
-  for (const el of document.querySelectorAll(".reveal")) {
-    if (inViewportNow(el)) revealNow(el, n++ * 0.07);   // 위에서 아래로 차례차례
-    else observeReveal(el);
+  // 첫 화면에 이미 들어와 있는 구획도 관찰기에 물린다. 다만 지금 보이는
+  // 것들은 관찰기의 첫 콜백을 기다리지 않고 곧바로 계단식으로 올린다.
+  //
+  // 감춤 스타일이 붙은 바로 그 프레임에 .revealed 까지 붙이면 브라우저가
+  // "이전 값"을 가진 적이 없어 전환을 건너뛰고 툭 나타난다 — 첫 화면
+  // 구획만 페이드가 안 걸리던 이유다. 그래서 사이에 한 번 끊어 줘야 하는데,
+  // requestAnimationFrame 으로 끊으면 안 된다: 백그라운드 탭에서 열면 rAF 가
+  // 아예 안 돌아서 첫 화면이 빈 채로 남는다. offsetHeight 를 읽어 스타일을
+  // 그 자리에서 확정시키면, 프레임을 기다리지 않고도 전환이 걸린다.
+  const first = [];
+  for (const el of document.querySelectorAll(".reveal, .mask-reveal")) {
+    observeReveal(el);
+    if (inViewportNow(el)) first.push(el);
   }
+  void document.body.offsetHeight;
+  first.forEach((el, i) => revealNow(el, i * 0.06));
 
-  // 탭을 백그라운드에 두고 열면 여기까지도 안 돌 수 있다. 다시 보이는 순간
+  // 탭을 백그라운드에 두고 열면 관찰기가 늦게 깰 수 있다. 다시 보이는 순간
   // 화면에 들어와 있는 것만 한 번 쓸어 준다 — 최후의 안전장치.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
-    for (const el of document.querySelectorAll(".reveal:not(.revealed)")) {
+    for (const el of document.querySelectorAll(".reveal:not(.revealed), .mask-reveal:not(.revealed)")) {
       if (inViewportNow(el)) revealNow(el);
     }
   });
@@ -123,37 +140,9 @@ function wireHeadingMasks() {
     }).join("");
 
     h.querySelectorAll(".mask-word").forEach((w, i) => w.style.setProperty("--i", i));
-    if (inViewportNow(h)) h.classList.add("revealed");
-    else observeReveal(h);
+    // 언제 올릴지는 wireReveals 가 정한다 — 구획과 같은 관찰기를 쓰게 해서
+    // 제목만 따로 노는 일이 없게 한다.
   }
-}
-
-/* — 미세 패럴랙스 —
-   스크롤에 따라 몇 픽셀만 어긋나게 민다. 크게 주면 표와 눈금이 어긋나
-   값을 잘못 읽게 되므로 폭을 좁게 잡았다. 화면 안에 있을 때만 계산하고,
-   스크롤이 아무리 잦아도 프레임당 한 번만 쓴다. */
-function wireParallax() {
-  const targets = [...document.querySelectorAll("[data-parallax]")];
-  if (!targets.length) return;
-
-  let queued = false;
-  const apply = () => {
-    queued = false;
-    for (const el of targets) {
-      const r = el.getBoundingClientRect();
-      if (r.bottom < 0 || r.top > innerHeight) continue;   // 화면 밖은 건드리지 않는다
-      const range = Number(el.dataset.parallax) || 14;
-      // 요소가 화면을 지나가는 정도를 -1..1 로 놓고 그만큼 어긋나게 민다
-      const p = (r.top + r.height / 2 - innerHeight / 2) / (innerHeight / 2 + r.height / 2);
-      el.style.transform = `translateY(${(p * range).toFixed(1)}px)`;
-    }
-  };
-  addEventListener("scroll", () => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(apply);
-  }, { passive: true });
-  apply();
 }
 
 /* — Lenis 스무스 스크롤 —
@@ -186,9 +175,8 @@ if (reduced) {
   markReady();
 } else {
   startLenis();
-  wireReveals();
-  wireHeadingMasks();
-  wireParallax();
+  wireHeadingMasks();   // 단어를 먼저 쪼개 두고
+  wireReveals();        // 그 다음에 언제 올릴지 정한다
   markReady();
   // 패널을 펴면 그 안의 표가 처음 나타난다 — 그때도 같은 리빌을 건다.
   document.addEventListener("panel-opened", (ev) => {
@@ -203,5 +191,11 @@ if (reduced) {
       h.classList.remove("revealed");
     }
     wireHeadingMasks();
+    // 다시 잘랐으니 지금 보이는 제목은 곧바로 올려 준다 — 안 그러면 화면
+    // 밖으로 나갔다 들어올 때까지 빈 자리로 남는다.
+    void document.body.offsetHeight;
+    for (const h of document.querySelectorAll(".mask-reveal:not(.revealed)")) {
+      if (inViewportNow(h)) revealNow(h);
+    }
   });
 }

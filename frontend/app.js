@@ -103,15 +103,26 @@
     });
   }
 
+  // 안내 문구는 폭에 따라 길이가 다르다. 좁은 화면에서 괄호 안 예시까지
+  // 넣으면 입력칸 밖으로 잘려 나가, 있으나 마나 한 글자만 보인다.
+  const NARROW = matchMedia("(max-width: 640px)");
+
+  function applyPlaceholders() {
+    document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+      const short = el.dataset.i18nPhShort;
+      el.placeholder = t(NARROW.matches && short ? short : el.dataset.i18nPh);
+    });
+  }
+  // 창을 돌리거나 크기를 바꾸면 다시 고른다
+  NARROW.addEventListener("change", applyPlaceholders);
+
   function applyStaticText() {
     document.documentElement.lang = lang;
     document.querySelectorAll("[data-i18n]").forEach((el) => {
       el.innerHTML = t(el.dataset.i18n);
     });
     ensureCarets();
-    document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
-      el.placeholder = t(el.dataset.i18nPh);
-    });
+    applyPlaceholders();
     document.querySelectorAll("[data-i18n-aria]").forEach((el) => {
       el.setAttribute("aria-label", t(el.dataset.i18nAria));
     });
@@ -518,8 +529,11 @@
   // 쓰는 상승 빨강 / 하락 파랑 짝을 그대로 받는다(서버가 스킴별로 내려줌).
   // 색만으로 의미를 나르지 않도록 막대마다 부호 붙은 숫자를 함께 찍는다.
 
-  const FLOW_W = 1120, FLOW_H = 264;
-  const FLOW_PAD = { l: 64, r: 14, t: 26, b: 42 };
+  const FLOW_W = 1120, FLOW_H = 280;
+  // 아래 여백이 넉넉해야 눈금 끝까지 닿은 막대의 값 라벨(막대 바깥에 붙는다)과
+  // 축 라벨(개인·외국인…)이 같은 줄에서 부딪히지 않는다. 값을 막대 안으로
+  // 접어 넣는 방법도 있지만, 막대와 같은 색이라 글자가 묻혀 읽을 수 없다.
+  const FLOW_PAD = { l: 64, r: 14, t: 26, b: 58 };
 
   // 축 눈금용 — 서버의 _fmt_signed_flow 와 같은 규칙. 네이버 원본이 이미
   // 억원이라(페이지 표기 "단위:억원") 조 단위만 접는다.
@@ -599,7 +613,7 @@
           <rect x="${cx - band / 2}" y="${y0}" width="${band}" height="${y1 - y0}" fill="transparent"/>
           ${h < 0.5 ? "" : `<path d="${path}" style="fill:${c.color}"/>`}
           <text x="${cx}" y="${labelY}" text-anchor="middle" font-size="11" font-weight="500" style="fill:${c.color}">${esc(c.value)}</text>
-          <text x="${cx}" y="${y1 + 17}" text-anchor="middle" font-size="11" style="fill:var(--c-dim)">${esc(c.label)}</text>
+          <text x="${cx}" y="${y1 + 32}" text-anchor="middle" font-size="11" style="fill:var(--c-dim)">${esc(c.label)}</text>
         </g>`;
     }).join("");
 
@@ -1883,9 +1897,11 @@
     </div>`;
   }
 
-  function custodyChartSvg(points, w = 1000, h = 240) {
+  function custodyChartSvg(points, w = 1000, h = 254) {
     // padL 은 y축 눈금 글자("$149.3B")가 들어갈 만큼 잡는다.
-    const padL = 62, padR = 34, padT = 34, padB = 30;
+    // padT 는 최고점 위에 hover 라벨 두 줄(월·금액)이 통째로 들어갈 만큼.
+    // 좁으면 맨 위 점에 손을 올렸을 때 월 표시가 도판 밖으로 잘려 나간다.
+    const padL = 62, padR = 34, padT = 48, padB = 30;
     // CSS 변수는 SVG 프레젠테이션 속성(fill="…")에는 안 먹지만 style 선언에는
     // 먹는다 — 이름 그대로 흘려 두면 밝은 판/다크 판이 바뀔 때 차트도 같이 간다.
     const accent = "var(--color-text)";     // 크롬은 무채색. 유채색은 데이터 몫이다
@@ -1967,7 +1983,9 @@
         const y = parseFloat(band.dataset.y);
         const amount = parseFloat(band.dataset.amount);
         const tx = Math.max(46, Math.min(w - 46, x));   // 라벨 좌우 잘림 방지
-        const ty = Math.max(16, y - 16);
+        // 위쪽 하한은 값 라벨이 아니라 **그 위에 얹히는 월 라벨** 기준이다.
+        // 값 라벨만 막아 두면 월 라벨이 ty-12 로 밀려 도판 밖에서 잘린다.
+        const ty = Math.max(26, y - 16);
         dot.setAttribute("cx", x);
         dot.setAttribute("cy", y);
         val.setAttribute("x", tx);

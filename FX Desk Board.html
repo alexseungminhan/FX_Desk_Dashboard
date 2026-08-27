@@ -96,7 +96,10 @@
      늘어난다. 이걸 안 풀면 아래 .scroll-x 가 스크롤을 못 하고 패널이
      통째로 넓어져 페이지가 가로로 밀린다. */
   .blueprint,.scroll-x{min-width:0}
-  .scroll-x{overflow-x:auto;overscroll-behavior-x:contain}
+  /* overflow-x 만 적으면 CSS 가 overflow-y 를 visible → auto 로 올려 버린다.
+     그 상태에서는 안쪽이 1px 만 넘쳐도 표·차트 옆에 세로 스크롤바가 붙는다.
+     세로로 넘칠 내용이 없는 칸이므로 아예 잠근다. */
+  .scroll-x{overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
   /* 표 머리 — 여덟 종류의 표가 저마다 되풀이하던 선언을 하나로 모은다. */
   .sw-head,.ic-head,.bi-head,.q-head,.st-head,.rd-head,.fb-head,.flow-head,.cv-head,.mv-head{
     border-bottom:1px solid var(--rule-mid);padding-bottom:5px}
@@ -315,7 +318,10 @@
     /* 제목 옆 기준일·출처·건수는 좁은 화면에서 제목과 자리를 다툰다.
        제목이 한 줄을 통째로 쓰게 해서 아래로 내린다. */
     .panel-head > h4{flex:1 1 100%}
-    #gsearch-wrap{flex:1 1 100%;max-width:none;order:9}
+    /* 검색창은 제 줄을 통째로 쓴다. flex-basis 만 100% 로 두면 앞줄에서 밀려난
+       날짜와 같은 줄을 나눠 쓰면서 쪼그라들어, 안내 문구가 오른쪽에서 잘린다.
+       min-width 로 줄바꿈을 못박는다. */
+    #gsearch-wrap{flex:1 1 100%;min-width:100%;max-width:none;order:9}
     /* 입력 폰트가 16px 미만이면 iOS·안드로이드가 포커스 시 화면을 확대한다 */
     #global-search,#news-kw-input{font-size:16px !important}
     /* 탭 줄은 감춰진 채 옆으로 밀리느니 접혀서 다 보이는 편이 낫다 */
@@ -627,7 +633,7 @@
   <div class="nav" style="border-bottom:2px solid var(--rule-heavy);padding:13px 30px 11px;position:sticky;top:0;z-index:30;background:var(--color-bg)">
     <span class="nav-brand" style="font-size:22px;margin-right:0;letter-spacing:-.035em">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:10px;font-weight:600;color:var(--c-dim);letter-spacing:.22em;text-transform:uppercase">Market Board</span></span>
     <div id="gsearch-wrap" style="position:relative;flex:1;max-width:360px;margin-right:auto">
-      <input id="global-search" class="input" type="text" data-i18n-ph="nav.search.ph" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
+      <input id="global-search" class="input" type="text" data-i18n-ph="nav.search.ph" data-i18n-ph-short="nav.search.ph.short" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
       <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--rule-mid);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
     </div>
     <!-- 한/영 — 보드 전체 문구를 갈아 끼운다 (app.js 의 applyLang).
@@ -880,9 +886,7 @@
             <span id="custody-source" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div id="custody-stats" style="display:flex;flex-wrap:wrap;gap:0 34px;margin-bottom:12px"></div>
-          <!-- 이 보드에서 유일하게 그림에 가까운 칸이라 미세 패럴랙스를 건다.
-               숫자 표에는 걸지 않는다 — 눈금과 값이 어긋나 보이면 잘못 읽는다. -->
-          <div class="scroll-x"><div id="custody-chart" data-parallax="10"></div></div>
+          <div class="scroll-x"><div id="custody-chart"></div></div>
           <div id="custody-empty" data-i18n="custody.empty" style="display:none;font-size:12px;color:var(--c-label);padding:10px 0">보관금액 데이터를 불러오지 못했습니다.</div>
         </div>
 
@@ -909,7 +913,7 @@
             <span id="news-count" class="mono" style="font-size:11px;color:var(--c-label)"></span>
           </div>
           <div style="position:relative;margin-bottom:8px">
-            <input id="news-kw-input" class="input" type="text" data-i18n-ph="news.kw.ph" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
+            <input id="news-kw-input" class="input" type="text" data-i18n-ph="news.kw.ph" data-i18n-ph-short="news.kw.ph.short" placeholder="키워드로 검색 (Enter로 추가 · 여러 개 가능 · 최근 24시간 전체 대상)" style="font-size:12.5px;padding:7px 10px" autocomplete="off">
           </div>
           <div id="news-kw-chips" class="kw-wrap" style="display:none"></div>
           <div id="news-list" class="nws-list"></div>
@@ -1067,8 +1071,8 @@
 </div>
 
 <script src="/static/vendor/lenis.min.js?v=1"></script>
-<script src="/static/i18n.js?v=5"></script>
-<script src="/static/app.js?v=33"></script>
-<script type="module" src="/static/motion.js?v=6"></script>
+<script src="/static/i18n.js?v=6"></script>
+<script src="/static/app.js?v=37"></script>
+<script type="module" src="/static/motion.js?v=9"></script>
 </body>
 </html>

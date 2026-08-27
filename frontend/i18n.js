@@ -26,6 +26,10 @@
       ko: "종목·지표 검색 (예: 하이닉스, 환율, 금)",
       en: "Search stocks & indicators (e.g. Hynix, USD/KRW, Gold)",
     },
+    // 좁은 화면에서는 괄호 안 예시까지 넣으면 입력칸 밖으로 잘려 나간다.
+    // app.js 가 폭에 따라 위/아래를 골라 쓴다 (data-i18n-ph-short).
+    "nav.search.ph.short": { ko: "종목·지표 검색", en: "Search stocks & indicators" },
+    "news.kw.ph.short": { ko: "키워드로 검색 (Enter로 추가)", en: "Filter by keyword (Enter to add)" },
     "conn.connecting": { ko: "연결 중…", en: "Connecting…" },
     "conn.up": { ko: "실시간 연결됨", en: "Live" },
     "conn.down": { ko: "연결 끊김 · 재연결 중", en: "Disconnected · reconnecting" },
