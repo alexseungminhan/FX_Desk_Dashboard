@@ -211,6 +211,34 @@ a:hover { color: var(--color-text); text-decoration: underline; }
 .nav a { color: inherit; text-decoration: none; font-size: 12px; }
 .nav a:hover, .nav a[aria-current='page'] { color: var(--color-accent); }
 
+/* 제작자 표기 — 브랜드 뒤에 붙는 잔글씨. 세로 규칙선 하나로 갈라 두면
+   "Market Board"(제품 이름)와 사람 이름이 한 덩어리로 안 읽힌다. */
+.nav-byline {
+  font-size: 10px; font-weight: 500; color: var(--c-label);
+  letter-spacing: .08em; white-space: nowrap;
+  padding-left: 10px; margin-right: 2px;
+  border-left: 1px solid var(--rule-mid);
+}
+/* 좁아지면 검색창이 먼저다 — 표기는 바닥에도 있으니 여기서 뺀다. */
+@media (max-width: 860px) { .nav-byline { display: none; } }
+
+/* — 바닥글 — */
+.foot {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: var(--space-3) var(--space-4); flex-wrap: wrap;
+  font-size: 10px; color: var(--c-label); letter-spacing: .06em;
+  padding-top: 12px; margin-top: 20px; border-top: 1px solid var(--rule-mid);
+}
+.foot-by { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+.foot-sep { color: var(--rule-mid); }
+/* 밑줄은 평소엔 접어 둔다 — 바닥 잔글씨에 파란 링크 하나가 뜨면
+   보드에서 유채색을 안 쓰는 원칙이 그 한 곳에서 깨진다. */
+.foot-link {
+  color: var(--c-dim); text-decoration: none;
+  border-bottom: 1px solid transparent; transition: border-color .15s, color .15s;
+}
+.foot-link:hover { color: var(--color-accent); border-bottom-color: currentColor; }
+
 /* — 직각 원칙 — */
 .btn, .input, .tag, .seg { border-radius: 0; }
 

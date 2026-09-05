@@ -192,6 +192,10 @@
       ko: "FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신",
       en: "FX DESK · live market dashboard — sources: Naver Finance (KR) · Yahoo Finance (global) · last updated",
     },
+    // 머리·바닥의 제작자 표기 — 이름은 두 판본이 같고 앞뒤 문구만 갈린다.
+    "byline": { ko: "제작 한승민", en: "made by Seungmin Han" },
+    "footer.copy": { ko: "© 2026 한승민 (Seungmin Han)", en: "© 2026 Seungmin Han" },
+    "footer.portfolio": { ko: "포트폴리오", en: "Portfolio" },
 
     // 팝업
     "pop.close": { ko: "닫기", en: "Close" },

@@ -1372,7 +1372,10 @@
     renderKeywordNews();
     if (snapshot.asOf) {
       const d = new Date(snapshot.asOf);
-      $("as-of").textContent = d.toLocaleTimeString("ko-KR", { hour12: false });
+      // 로캘 기본값으로 찍으면 두 번 샌다: 영문판에 "오전/오후"가 뜨고,
+      // 한국 밖에서 열면 머리의 KST 시계와 몇 시간씩 어긋난 값이 바닥에
+      // 남는다. 보드의 시각 표기는 전부 KST 한 곳으로 모은다.
+      $("as-of").textContent = kstClock(d) + " KST";
     }
   }
 
@@ -1680,12 +1683,18 @@
     hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
 
-  function kstNow() {
+  function kstParts(d) {
     const out = {};
-    for (const { type, value } of KST_FMT.formatToParts(new Date())) out[type] = value;
+    for (const { type, value } of KST_FMT.formatToParts(d)) out[type] = value;
     // 자정은 로케일에 따라 24 로 나온다.
     if (out.hour === "24") out.hour = "00";
     return out;
+  }
+  function kstNow() { return kstParts(new Date()); }
+  // 임의의 시각을 머리의 시계와 같은 표기로 — KST 24시간.
+  function kstClock(d) {
+    const k = kstParts(d);
+    return `${k.hour}:${k.minute}:${k.second}`;
   }
 
   function nowAsOf() {

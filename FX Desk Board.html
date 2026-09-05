@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Gothic+A1:wght@500;600;700&family=IBM+Plex+Sans+KR:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&family=Public+Sans:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/styles.css?v=17">
+<link rel="stylesheet" href="/static/styles.css?v=18">
 <style>
 
   /* ── 페이지 전용 ─────────────────────────────────────────────────────
@@ -632,6 +632,9 @@
   <!-- header -->
   <div class="nav" style="border-bottom:2px solid var(--rule-heavy);padding:13px 30px 11px;position:sticky;top:0;z-index:30;background:var(--color-bg)">
     <span class="nav-brand" style="font-size:22px;margin-right:0;letter-spacing:-.035em">FX DESK<span style="color:var(--color-accent)">.</span> <span style="font-size:10px;font-weight:600;color:var(--c-dim);letter-spacing:.22em;text-transform:uppercase">Market Board</span></span>
+    <!-- 제작자 표기 — 브랜드에 붙되 한 급 낮게. 좁은 화면에서는 검색창에
+         자리를 내주고 빠진다 (styles.css 의 .nav-byline). -->
+    <span class="nav-byline" data-i18n="byline">제작 한승민</span>
     <div id="gsearch-wrap" style="position:relative;flex:1;max-width:360px;margin-right:auto">
       <input id="global-search" class="input" type="text" data-i18n-ph="nav.search.ph" data-i18n-ph-short="nav.search.ph.short" placeholder="종목·지표 검색 (예: 하이닉스, 환율, 금)" style="font-size:12.5px;padding:5px 10px;min-height:32px" autocomplete="off">
       <div id="global-search-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--color-bg);border:1px solid var(--rule-mid);box-shadow:var(--shadow-md);z-index:40;max-height:320px;overflow-y:auto"></div>
@@ -923,8 +926,15 @@
 
     </div>
 
-    <div style="text-align:left;font-size:10px;color:var(--c-label);padding-top:12px;margin-top:20px;border-top:1px solid var(--rule-mid);letter-spacing:.06em">
-      <span data-i18n="footer">FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신</span> <span id="as-of" class="mono">—</span>
+    <div class="foot">
+      <div class="foot-src">
+        <span data-i18n="footer">FX DESK · 실시간 시황 대시보드 — 데이터 출처: 국내 Naver Finance · 해외 Yahoo Finance (yfinance) · 마지막 갱신</span> <span id="as-of" class="mono">—</span>
+      </div>
+      <div class="foot-by">
+        <span data-i18n="footer.copy">© 2026 한승민 (Seungmin Han)</span>
+        <span class="foot-sep" aria-hidden="true">·</span>
+        <a class="foot-link" href="https://meungsin-han.com" target="_blank" rel="noopener noreferrer">meungsin-han.com</a>
+      </div>
     </div>
   </div>
 </div>
@@ -1071,8 +1081,8 @@
 </div>
 
 <script src="/static/vendor/lenis.min.js?v=1"></script>
-<script src="/static/i18n.js?v=6"></script>
-<script src="/static/app.js?v=40"></script>
+<script src="/static/i18n.js?v=7"></script>
+<script src="/static/app.js?v=42"></script>
 <script type="module" src="/static/motion.js?v=9"></script>
 </body>
 </html>
